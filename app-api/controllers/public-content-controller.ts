@@ -63,8 +63,8 @@ export async function publicPageController(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  if (req.method !== "GET") {
-    res.setHeader("Allow", ["GET"]);
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.setHeader("Allow", ["GET", "HEAD"]);
     return sendError(res, "Method not allowed.", 405);
   }
 
@@ -95,6 +95,27 @@ export async function publicPageListController(
   try {
     const items = await pageService.listPublished();
     return sendOk(res, { items });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Request failed.";
+    return sendError(res, message, 400);
+  }
+}
+
+export async function publicHomepageController(
+  req: NextApiRequest,
+  res: NextApiResponse,
+) {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.setHeader("Allow", ["GET", "HEAD"]);
+    return sendError(res, "Method not allowed.", 405);
+  }
+
+  try {
+    const page = await pageService.getHomepage();
+    if (!page) {
+      return sendError(res, "No homepage configured.", 404);
+    }
+    return sendOk(res, page);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Request failed.";
     return sendError(res, message, 400);

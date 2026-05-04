@@ -23,6 +23,19 @@ export const pageRepository = {
     return prisma.page.findFirst({ where: { slug } });
   },
 
+  findHomepage() {
+    return prisma.page.findFirst({
+      where: { isHomepage: true, status: "published" },
+    });
+  },
+
+  async unsetAllHomepages() {
+    await prisma.page.updateMany({
+      where: { isHomepage: true },
+      data: { isHomepage: false },
+    });
+  },
+
   create(data: Prisma.PageCreateInput) {
     return prisma.page.create({ data });
   },

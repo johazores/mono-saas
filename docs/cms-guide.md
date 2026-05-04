@@ -206,18 +206,23 @@ Each template has:
 1. Go to **Admin → Pages**.
 2. Click **New Page**.
 3. Fill in the **Page Details** card (title, slug, status).
-4. Fill in the **SEO** card (optional SEO title and description).
-5. In the **Page Blocks** section, add blocks:
+4. Optionally check **Set as Homepage** to make it the site's root page (`/`).
+5. Fill in the **SEO** card (optional SEO title and description).
+6. In the **Page Blocks** section, add blocks:
    - Select a block template from the dropdown.
    - Fill in the block's fields.
    - Reorder blocks by dragging.
    - Add as many blocks as needed.
-6. Use the **Preview** button to see how blocks render.
-7. Click **Save**.
+7. Toggle the **Preview** button to see a live side-by-side preview while editing.
+8. Click **Save**.
+
+> **Note:** Only one page can be the homepage at a time. Setting a new page as homepage automatically unsets the previous one.
 
 ### How Blocks Render
 
 Each block stores its template slug and field data. On the public site, the `BlockRenderer` component matches each block to its template and renders the content.
+
+**Custom template renderers** can be registered in `components/blocks/templates/index.ts` for specialized rendering. If no custom renderer is registered, the generic field-type renderer is used.
 
 ---
 
@@ -241,11 +246,15 @@ When a content type or block template has a `media` field, editors can browse an
 
 The CMS generates public pages automatically based on your configuration:
 
-| URL Pattern                | What It Shows         | Requirement                                    |
-| -------------------------- | --------------------- | ---------------------------------------------- |
-| `/p/{page-slug}`           | A CMS Page            | Page must be published                         |
-| `/{type-slug}`             | List of content items | Content type must have `hasPublicList` enabled |
-| `/{type-slug}/{item-slug}` | Single content item   | Content type must have `hasDetailPage` enabled |
+| URL Pattern                | What It Shows         | Requirement                                        |
+| -------------------------- | --------------------- | -------------------------------------------------- |
+| `/`                        | Homepage              | A page must be published with "Set as Homepage" on |
+| `/{page-slug}`             | A CMS Page            | Page must be published (middleware rewrites)        |
+| `/p/{page-slug}`           | A CMS Page (direct)   | Page must be published                             |
+| `/{type-slug}`             | List of content items | Content type must have `hasPublicList` enabled     |
+| `/{type-slug}/{item-slug}` | Single content item   | Content type must have `hasDetailPage` enabled     |
+
+Root-level page routing uses Next.js middleware to check if a slug matches a CMS page. If it does, the request is transparently rewritten to `/p/{slug}`. This means pages can be accessed at clean URLs like `/about` instead of `/p/about`.
 
 These pages are server-side rendered (SSR) for SEO.
 

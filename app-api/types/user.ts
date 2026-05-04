@@ -12,6 +12,8 @@ export type UserRecord = {
   failedLoginAttempts: number;
   lockedUntil: Date | null;
   lastLoginAt: Date | null;
+  phone: string | null;
+  address: UserAddress | null;
   createdAt: Date;
   updatedAt: Date;
   activePlan?: {
@@ -39,11 +41,22 @@ export type CreateUserInput = {
   password: string;
 };
 
+export type UserAddress = {
+  street?: string;
+  street2?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
+};
+
 export type UpdateUserInput = {
   name?: string;
   email?: string;
   password?: string;
   status?: AccountStatus;
+  phone?: string;
+  address?: UserAddress;
 };
 
 export type UpdateUserProfileInput = {

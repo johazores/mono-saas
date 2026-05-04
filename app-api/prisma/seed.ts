@@ -250,6 +250,14 @@ async function main() {
       email: "user@demo.com",
       passwordHash: userHash,
       status: "active",
+      phone: "+1-555-0100",
+      address: {
+        street: "123 Main St",
+        city: "Portland",
+        state: "OR",
+        zip: "97201",
+        country: "US",
+      },
     },
   });
   console.log("User seeded:", user.email);
@@ -1080,6 +1088,66 @@ async function main() {
       create: bt,
     });
     console.log(`BlockTemplate seeded: ${bt.name}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Seed CMS pages
+  // ---------------------------------------------------------------------------
+  const pages = [
+    {
+      title: "Home",
+      slug: "home",
+      status: "published",
+      isHomepage: true,
+      seoTitle: "Welcome",
+      seoDescription: "Welcome to our platform",
+      blocks: [
+        {
+          templateSlug: "hero-banner",
+          data: {
+            heading: "Welcome to Our Platform",
+            subheading: "Build something great",
+            ctaText: "Get Started",
+            ctaUrl: "/user-register",
+          },
+        },
+      ],
+      env,
+    },
+    {
+      title: "About Us",
+      slug: "about",
+      status: "published",
+      isHomepage: false,
+      seoTitle: "About Us",
+      seoDescription: "Learn more about our team and mission",
+      blocks: [
+        {
+          templateSlug: "rich-text",
+          data: {
+            content:
+              "<h2>Our Mission</h2><p>We build tools that empower creators and businesses to succeed online.</p>",
+          },
+        },
+      ],
+      env,
+    },
+  ];
+
+  for (const page of pages) {
+    await prisma.page.upsert({
+      where: { env_slug: { env, slug: page.slug } },
+      update: {
+        title: page.title,
+        status: page.status,
+        isHomepage: page.isHomepage,
+        seoTitle: page.seoTitle,
+        seoDescription: page.seoDescription,
+        blocks: page.blocks,
+      },
+      create: page,
+    });
+    console.log(`Page seeded: ${page.title}`);
   }
 }
 

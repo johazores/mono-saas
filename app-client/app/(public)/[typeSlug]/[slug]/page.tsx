@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { mediaUrl } from "@/lib/media-url";
+import { DefaultContentRenderer } from "@/components/content/default-content-renderer";
+import type { ContentFieldDefinition } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7001";
 
@@ -10,18 +12,26 @@ type FlatItem = Record<string, unknown> & {
   status: string;
 };
 
+type ContentTypeInfo = {
+  fields: ContentFieldDefinition[];
+} | null;
+
 async function getItem(
   typeSlug: string,
   slug: string,
-): Promise<FlatItem | null> {
+): Promise<{ item: FlatItem | null; contentType: ContentTypeInfo }> {
   const res = await fetch(
     `${API_URL}/api/cms/public/content/${typeSlug}/${slug}`,
     { next: { revalidate: 60 } },
   );
-  if (!res.ok) return null;
+  if (!res.ok) return { item: null, contentType: null };
   const json = await res.json();
-  // API returns { data: { contentType, item } } where item is already flattened
-  return (json.data?.item as FlatItem) ?? null;
+  return {
+    item: (json.data?.item as FlatItem) ?? null,
+    contentType: json.data?.contentType
+      ? { fields: json.data.contentType.fields ?? [] }
+      : null,
+  };
 }
 
 export async function generateMetadata({
@@ -30,7 +40,7 @@ export async function generateMetadata({
   params: Promise<{ typeSlug: string; slug: string }>;
 }) {
   const { typeSlug, slug } = await params;
-  const item = await getItem(typeSlug, slug);
+  const { item } = await getItem(typeSlug, slug);
   if (!item) return {};
   return {
     title: String(item.seoTitle || item.title || slug),
@@ -44,9 +54,19 @@ export default async function ContentDetailPage({
   params: Promise<{ typeSlug: string; slug: string }>;
 }) {
   const { typeSlug, slug } = await params;
-  const item = await getItem(typeSlug, slug);
+  const { item, contentType } = await getItem(typeSlug, slug);
   if (!item) notFound();
 
+  // If we have content type field definitions, use the default renderer
+  if (contentType && contentType.fields.length > 0) {
+    return (
+      <main>
+        <DefaultContentRenderer item={item} fields={contentType.fields} />
+      </main>
+    );
+  }
+
+  // Fallback: hardcoded rendering for items without field definitions
   const featuredImage = item.featuredImage as string | undefined;
   const body = item.body as string | undefined;
   const excerpt = item.excerpt as string | undefined;
@@ -55,7 +75,6 @@ export default async function ContentDetailPage({
 
   return (
     <main className="max-w-3xl mx-auto py-12 px-6">
-      {/* Meta line */}
       {(author || publishedAt) && (
         <p className="mb-4 text-sm text-[var(--theme-muted)]">
           {author && <span>By {author}</span>}

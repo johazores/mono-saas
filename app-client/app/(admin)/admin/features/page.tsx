@@ -10,7 +10,12 @@ const featureFields: ResourceField[] = [
     type: "text",
     help: "Lowercase with dots/hyphens (e.g. storage.5gb, api.access).",
   },
-  { name: "description", label: "Description", type: "text" },
+  {
+    name: "description",
+    label: "Description",
+    type: "text",
+    section: "Basics",
+  },
   {
     name: "category",
     label: "Category",

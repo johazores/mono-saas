@@ -1,11 +1,12 @@
 import type { ReactNode, InputHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 
 export type ButtonProps = {
   variant?: ButtonVariant;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
   disabled?: boolean;
+  loading?: boolean;
   children: ReactNode;
   onClick?: () => void;
   type?: "button" | "submit";

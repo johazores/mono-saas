@@ -157,6 +157,9 @@ export const userService = {
       data.passwordHash = hashPassword(input.password);
     }
 
+    if (input.phone !== undefined) data.phone = input.phone || null;
+    if (input.address !== undefined) data.address = input.address || null;
+
     const user = await userRepository.update(id, data);
     return enrichWithPlan(safeUser(user));
   },

@@ -7,6 +7,7 @@ export type PageRecord = {
   title: string;
   slug: string;
   status: string;
+  isHomepage: boolean;
   seoTitle: string | null;
   seoDescription: string | null;
   blocks: FlexibleBlock[];
@@ -18,6 +19,7 @@ export type CreatePageInput = {
   title: string;
   slug: string;
   status?: string;
+  isHomepage?: boolean;
   seoTitle?: string;
   seoDescription?: string;
   blocks?: FlexibleBlock[];
@@ -27,6 +29,7 @@ export type UpdatePageInput = {
   title?: string;
   slug?: string;
   status?: string;
+  isHomepage?: boolean;
   seoTitle?: string;
   seoDescription?: string;
   blocks?: FlexibleBlock[];

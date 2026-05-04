@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ContentFieldDefinition, FlexibleBlock } from "@/types";
+import { templateRegistry } from "./templates";
 
 /**
  * Template definitions are passed in so this component works both as a
@@ -8,6 +9,9 @@ import type { ContentFieldDefinition, FlexibleBlock } from "@/types";
  *
  * Each template maps slug → field definitions, allowing the renderer to
  * decide how to display each field based on its type.
+ *
+ * Custom renderers can be registered in `./templates/index.ts` to override
+ * the generic field-type rendering for specific template slugs.
  */
 type TemplateDef = {
   name: string;
@@ -187,6 +191,20 @@ export function BlockRenderer({ blocks, templates }: BlockRendererProps) {
         const data = block.data || {};
         const fields = template.fields || [];
 
+        // Check for a custom template renderer in the registry
+        const CustomRenderer = templateRegistry[block.templateSlug];
+        if (CustomRenderer) {
+          return (
+            <section
+              key={`${block.templateSlug}-${index}`}
+              className="py-12 px-6"
+            >
+              <CustomRenderer data={data} fields={fields} />
+            </section>
+          );
+        }
+
+        // Generic field-type rendering (default fallback)
         // Determine section layout based on field count and types
         const hasImage = fields.some(
           (f) =>

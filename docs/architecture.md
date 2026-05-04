@@ -136,7 +136,7 @@ app-api/
 - **Collections**:
   - `Admin` — CMS admin accounts (name, email, passwordHash, role, status, failedLoginAttempts, lockedUntil, lastLoginAt)
   - `AdminSession` — Admin auth sessions (adminId -> Admin, tokenHash, expiresAt)
-  - `User` — Application users (env, name, email, passwordHash, clerkId, stripeCustomerId, status, parentId -> User, ancestors, failedLoginAttempts, lockedUntil, lastLoginAt) `@@unique([env, email])` `@@index([env, clerkId])`
+  - `User` — Application users (env, name, email, passwordHash, clerkId, stripeCustomerId, status, parentId -> User, ancestors, failedLoginAttempts, lockedUntil, lastLoginAt, phone, address as JSON) `@@unique([env, email])` `@@index([env, clerkId])`
   - `UserSession` — User auth sessions (env, userId -> User, tokenHash, expiresAt)
   - `Product` — Purchasable items (env, name, slug, description, type, price, currency, paymentModel, maxSubUsers, accessKeys, stripeTestProductId, stripeLiveProductId, metadata, isActive, sortOrder) `@@unique([env, slug])`
   - `ProductPrice` — Multiple Stripe prices per product with date ranges (env, productId -> Product, label, stripePriceId, mode test|live, amount, currency, interval, startDate, endDate, isDefault, metadata). Active price resolved at checkout by date range and default flag.
@@ -147,7 +147,7 @@ app-api/
   - `Feature` — Feature definitions (env, key, description, category, isActive, sortOrder) `@@unique([env, key])`
   - `ActivityLog` — Audit trail (env, actor, actorId, actorEmail, action, resource, resourceId, metadata, ip, userAgent, method, path, createdAt)
   - `SiteSetting` — Key-value configuration store (env, key, JSON value) for auth provider and system settings `@@unique([env, key])`
-  - `Page` — CMS pages with flexible block content (env, title, slug, status, seoTitle, seoDescription, blocks as JSON array of FlexibleBlock) `@@unique([env, slug])`
+  - `Page` — CMS pages with flexible block content (env, title, slug, status, isHomepage, seoTitle, seoDescription, blocks as JSON array of FlexibleBlock) `@@unique([env, slug])`
   - `ContentType` — ACF-like content type definitions (env, name, slug, pluralName, icon, description, fields as JSON, settings as JSON, listDisplay as JSON, publicSettings as JSON, status, sortOrder) `@@unique([env, slug])`
   - `ContentItem` — Content entries belonging to a content type (env, contentTypeId -> ContentType, contentTypeSlug, slug, title, data as JSON, status, sortOrder) `@@unique([env, contentTypeSlug, slug])`
   - `Taxonomy` — Taxonomy definitions (env, name, slug, pluralName, description, hierarchical, contentTypes as string array, status, sortOrder) `@@unique([env, slug])`
@@ -205,11 +205,12 @@ app-client/
 │       ├── [typeSlug]/ <- Public content list page
 │       └── [typeSlug]/[slug]/ <- Public content detail page
 ├── components/
-│   ├── ui/            <- Reusable primitives (Button, Modal, Notice, StatusBadge)
-│   ├── layout/        <- App shells (AdminShell with sidebar nav + logout)
+│   ├── ui/            <- Reusable primitives (Button, Modal, Notice, StatusBadge, Tabs, FormSelect, FormTextarea, RichTextEditor)
+│   ├── layout/        <- App shells (AdminShell with collapsible sidebar nav + logout, UserShell)
 │   ├── auth/          <- Auth provider context (AuthConfigProvider, ClerkSignIn, ClerkSignUp)
 │   ├── admin/         <- Resource CRUD components (ResourceManager, ResourceEditor, ResourceList, FieldRenderer, PageBuilder)
-│   └── blocks/        <- CMS block rendering (BlockRenderer — template-driven field-to-visual mapper)
+│   ├── blocks/        <- CMS block rendering (BlockRenderer — template-driven field-to-visual mapper, template registry for custom renderers)
+│   └── content/       <- Content rendering (DefaultContentRenderer — WordPress-like fallback for any content type)
 ├── hooks/             <- Custom React hooks (useAdminAuth, useUserAuth, useAdminResource, useFeatures, useCart)
 ├── lib/               <- Shared utilities (swr.ts — fetchers and SWR configuration)
 ├── services/          <- API client layer (api-client, auth-service, user-auth-service, resource-service, sub-user-service, purchase-service, billing-service, report-service, activity-log-service, admin-setting-service, checkout-service, download-service, cms-service)
@@ -238,9 +239,9 @@ app-client/
 
 - **Design tokens via CSS custom properties**: Theme colors defined as `--theme-*` vars in `globals.css`, mapped to Tailwind utilities via `@theme` directive, and overridden at runtime by `SiteConfigProvider`
 - **Tailwind-only styling**: All styling via Tailwind utility classes co-located in JSX, plus design token CSS vars for theming
-- **UI primitives**: Reusable `Button`, `Modal`, `Notice`, `StatusBadge`, `PageHeader`, `FormField`, `FormSection`, `EmptyState`, `StatCard`, `DashboardCard` components in `components/ui/`
-- **Admin layout shell**: `AdminShell` provides sidebar navigation with icons (Lucide), mobile hamburger menu, user avatar, wrapping admin pages
-- **User layout shell**: `UserShell` provides sidebar navigation with icons, plan badge, mobile menu wrapping user pages
+- **UI primitives**: Reusable `Button`, `Modal`, `Notice`, `StatusBadge`, `PageHeader`, `FormField`, `FormSection`, `FormSelect`, `FormTextarea`, `Tabs`, `RichTextEditor`, `EmptyState`, `StatCard`, `DashboardCard` components in `components/ui/`
+- **Admin layout shell**: `AdminShell` provides collapsible sidebar navigation with icons (Lucide), mobile hamburger menu, user avatar, wrapping admin pages. Collapse state persisted to localStorage
+- **User layout shell**: `UserShell` provides collapsible sidebar navigation with icons, plan badge, mobile menu wrapping user pages. Collapse state persisted to localStorage
 - **Site config provider**: `SiteConfigProvider` fetches site identity and theme tokens from `/api/settings/site` via SWR (60s dedup) and injects CSS custom properties at runtime. `useSiteConfig()` hook exposes `title`, `tagline`, `logo`, etc. to any component
 - **Dynamic head**: `DynamicHead` component sets favicon from site config
 - **SWR data fetching**: All client-side data fetching uses SWR (`lib/swr.ts`) for automatic caching, request deduplication, and stale-while-revalidate. Shared fetchers: `swrFetcher` (single object), `swrListFetcher` (unwraps `{ items }` arrays), `swrFeatureFetcher` (unwraps `{ features }` arrays)
@@ -250,6 +251,10 @@ app-client/
 - **Admin resource hook**: `useAdminResource<T>` uses SWR with 30s refresh interval and `refreshWhenHidden: false` for visibility-aware polling
 - **Field-driven forms**: `FieldRenderer` generates form inputs from field config arrays
 - **Barrel exports**: `@/types`, `@/components/ui`, `@/components/admin` — clean single-path imports
+- **CMS page routing (middleware)**: `middleware.ts` intercepts root-level paths and checks if a CMS page exists with that slug via HEAD request. If found, rewrites to `/p/[slug]`. Homepage support: if a page has `isHomepage: true`, `/` rewrites to `/p/__homepage`. Static route prefixes are explicitly excluded so they always take priority.
+- **Block template registry**: Custom React components can be registered in `components/blocks/templates/index.ts` to override generic field-type rendering for specific template slugs
+- **Default content renderer**: `DefaultContentRenderer` iterates content type field definitions and renders each by type (rich-text, media, date, repeater, etc.) providing a WordPress-like fallback display
+- **Rich text editor**: TipTap-based WYSIWYG editor (`RichTextEditor`) with toolbar for formatting, links, images. Used in admin forms via `FieldRenderer` for "rich-text" field type
 
 ### Service Layer
 

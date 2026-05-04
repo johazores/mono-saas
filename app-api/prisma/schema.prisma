@@ -36,6 +36,8 @@ model User {
   failedLoginAttempts Int            @default(0)
   lockedUntil         DateTime?
   lastLoginAt         DateTime?
+  phone               String?
+  address             Json?
   parent              User?          @relation("UserHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   children            User[]         @relation("UserHierarchy")
   sessions            UserSession[]
@@ -228,6 +230,7 @@ model Page {
   title          String
   slug           String
   status         String   @default("draft") // draft | published
+  isHomepage     Boolean  @default(false)
   seoTitle       String?
   seoDescription String?
   blocks         Json // PageBlock[]

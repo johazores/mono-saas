@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ResourceManager } from "@/components/admin";
 import type { ResourceField, ResourceItem } from "@/types";
 
@@ -18,6 +19,13 @@ const userFields: ResourceField[] = [
     type: "select",
     options: ["active", "disabled"],
   },
+  { name: "phone", label: "Phone", type: "text" },
+  { name: "address.street", label: "Street", type: "text" },
+  { name: "address.street2", label: "Street 2", type: "text" },
+  { name: "address.city", label: "City", type: "text" },
+  { name: "address.state", label: "State", type: "text" },
+  { name: "address.zip", label: "ZIP", type: "text" },
+  { name: "address.country", label: "Country", type: "text" },
 ];
 
 const emptyUser: ResourceItem = {
@@ -25,6 +33,8 @@ const emptyUser: ResourceItem = {
   email: "",
   password: "",
   status: "active",
+  phone: "",
+  address: { street: "", street2: "", city: "", state: "", zip: "", country: "" },
 };
 
 export default function UsersPage() {
@@ -36,6 +46,14 @@ export default function UsersPage() {
       getTitle={(item) => String(item.name || item.email)}
       getSubtitle={(item) => `${item.email}`}
       emptyItem={emptyUser}
+      renderItemActions={(item) => (
+        <Link
+          href={`/admin/users/${item.id}/activity`}
+          className="text-xs text-primary hover:underline"
+        >
+          Activity
+        </Link>
+      )}
     />
   );
 }

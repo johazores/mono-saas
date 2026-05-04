@@ -27,6 +27,7 @@ const emptyPage = {
   title: "",
   slug: "",
   status: "draft",
+  isHomepage: false,
   seoTitle: "",
   seoDescription: "",
   blocks: [] as FlexibleBlock[],
@@ -60,6 +61,7 @@ export default function PagesAdminPage() {
       title: page.title,
       slug: page.slug,
       status: page.status,
+      isHomepage: page.isHomepage || false,
       seoTitle: page.seoTitle || "",
       seoDescription: page.seoDescription || "",
       blocks: page.blocks || [],
@@ -112,10 +114,10 @@ export default function PagesAdminPage() {
           <div className="flex gap-2">
             <button
               type="button"
-              className="rounded-md border border-[var(--theme-border)] px-4 py-1.5 text-sm hover:bg-[var(--theme-surface)]"
+              className={`rounded-md border px-4 py-1.5 text-sm ${preview ? "border-[var(--theme-primary)] bg-[var(--theme-primary)]/10 text-[var(--theme-primary)]" : "border-[var(--theme-border)] hover:bg-[var(--theme-surface)]"}`}
               onClick={() => setPreview(!preview)}
             >
-              {preview ? "Editor" : "Preview"}
+              {preview ? "Hide Preview" : "Preview"}
             </button>
             <button
               type="button"
@@ -141,12 +143,9 @@ export default function PagesAdminPage() {
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
-        {preview ? (
-          <div className="rounded-lg border border-[var(--theme-border)] bg-white p-6">
-            <BlockRenderer blocks={form.blocks} templates={blockTemplates} />
-          </div>
-        ) : (
-          <>
+        <div className={`${preview ? "grid grid-cols-1 lg:grid-cols-2 gap-6" : ""}`}>
+          {/* Editor panel */}
+          <div className={`space-y-6 ${preview ? "overflow-y-auto max-h-[calc(100vh-12rem)]" : ""}`}>
             <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg,var(--theme-background))] p-6 shadow-sm">
               <h3 className="mb-4 text-sm font-semibold text-[var(--theme-muted)] uppercase tracking-wide">
                 Page Details
@@ -195,6 +194,19 @@ export default function PagesAdminPage() {
                     <option value="published">Published</option>
                   </select>
                 </label>
+                <label className="flex items-center gap-2 self-end py-2">
+                  <input
+                    type="checkbox"
+                    checked={form.isHomepage}
+                    onChange={(e) =>
+                      setForm({ ...form, isHomepage: e.target.checked })
+                    }
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                  />
+                  <span className="text-sm font-medium text-[var(--theme-text)]">
+                    Set as Homepage
+                  </span>
+                </label>
               </div>
             </div>
 
@@ -240,8 +252,28 @@ export default function PagesAdminPage() {
                 onChange={(blocks) => setForm({ ...form, blocks })}
               />
             </div>
-          </>
-        )}
+          </div>
+
+          {/* Preview panel (side-by-side when active) */}
+          {preview && (
+            <div className="rounded-xl border border-[var(--theme-border)] bg-white overflow-y-auto max-h-[calc(100vh-12rem)] shadow-sm">
+              <div className="border-b border-[var(--theme-border)] bg-[var(--theme-surface)] px-4 py-2">
+                <p className="text-xs font-medium text-[var(--theme-muted)] uppercase tracking-wide">
+                  Live Preview
+                </p>
+              </div>
+              <div className="p-4">
+                {form.blocks.length > 0 ? (
+                  <BlockRenderer blocks={form.blocks} templates={blockTemplates} />
+                ) : (
+                  <p className="text-center py-12 text-sm text-[var(--theme-muted)]">
+                    Add blocks to see a preview
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -275,6 +307,11 @@ export default function PagesAdminPage() {
             <div>
               <p className="font-medium text-[var(--theme-text)]">
                 {page.title}
+                {page.isHomepage && (
+                  <span className="ml-2 inline-block rounded bg-[var(--theme-primary)]/10 px-1.5 py-0.5 text-xs font-medium text-[var(--theme-primary)]">
+                    Homepage
+                  </span>
+                )}
               </p>
               <p className="text-xs text-[var(--theme-muted)]">
                 /{page.slug} · {page.status} · {(page.blocks || []).length}{" "}

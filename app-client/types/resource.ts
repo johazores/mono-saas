@@ -4,6 +4,7 @@ export type FieldType =
   | "text"
   | "password"
   | "textarea"
+  | "rich-text"
   | "number"
   | "date"
   | "select"
@@ -20,6 +21,7 @@ export type ResourceField = {
   options?: string[];
   optionLabels?: Record<string, string>;
   help?: string;
+  placeholder?: string;
   section?: EditorSection;
   fullWidth?: boolean;
   /** URL to load options dynamically (for checkboxes). Response: { ok, data: { items: [{ key, description, category }] } } */

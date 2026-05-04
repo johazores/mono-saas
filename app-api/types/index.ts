@@ -13,6 +13,7 @@ export type {
 } from "./admin";
 export type {
   UserRecord,
+  UserAddress,
   CreateUserInput,
   CreateSubUserInput,
   CreateSubUserResult,

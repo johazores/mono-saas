@@ -12,6 +12,8 @@ const safeSelect = {
   parentId: true,
   ancestors: true,
   lastLoginAt: true,
+  phone: true,
+  address: true,
   createdAt: true,
   updatedAt: true,
 } as const;

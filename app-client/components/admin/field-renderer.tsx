@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { resourceService } from "@/services/resource-service";
 import { slugify } from "@/lib/slugify";
 import type { ResourceField, FieldRendererProps, DynamicOption } from "@/types";
+
+const RichTextEditor = dynamic(
+  () =>
+    import("@/components/ui/rich-text-editor").then((m) => m.RichTextEditor),
+  { ssr: false, loading: () => <div className="rounded-lg border border-border bg-background min-h-[250px] animate-pulse" /> },
+);
 
 function formatDateInput(value: unknown) {
   if (!value) return "";
@@ -77,6 +84,22 @@ export function FieldRenderer({
         onChange={onChange}
         wrapperClass={wrapperClass}
       />
+    );
+  }
+
+  if (field.type === "rich-text") {
+    return (
+      <div className={`grid gap-1.5 ${wrapperClass || "col-span-2"}`}>
+        <span className="text-sm font-medium text-foreground">
+          {field.label}
+        </span>
+        <RichTextEditor
+          value={displayValue}
+          onChange={(html) => onChange(html)}
+          placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}...`}
+        />
+        {field.help && <span className="text-xs text-muted">{field.help}</span>}
+      </div>
     );
   }
 

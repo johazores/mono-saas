@@ -7,6 +7,7 @@ export type CmsPage = {
   title: string;
   slug: string;
   status: string;
+  isHomepage?: boolean;
   seoTitle?: string | null;
   seoDescription?: string | null;
   blocks: FlexibleBlock[];

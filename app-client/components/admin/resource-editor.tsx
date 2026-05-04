@@ -17,6 +17,24 @@ function getFieldSection(field: ResourceField): EditorSection {
   return "Basics";
 }
 
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  const keys = path.split(".");
+  let current: unknown = obj;
+  for (const key of keys) {
+    if (current == null || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+function setNestedValue(obj: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> {
+  const keys = path.split(".");
+  if (keys.length === 1) return { ...obj, [path]: value };
+  const [head, ...rest] = keys;
+  const child = (obj[head] as Record<string, unknown>) ?? {};
+  return { ...obj, [head]: setNestedValue({ ...child }, rest.join("."), value) };
+}
+
 export function ResourceEditor({
   item,
   fields,
@@ -53,7 +71,9 @@ export function ResourceEditor({
 
   function setField(name: string, value: unknown) {
     setEditing((current) => {
-      const next = { ...current, [name]: value };
+      const next = name.includes(".")
+        ? setNestedValue({ ...current }, name, value) as ResourceItem
+        : { ...current, [name]: value };
 
       // Auto-populate linked slug fields when source changes
       const linkedSlugs = slugLinks[name];
@@ -122,7 +142,7 @@ export function ResourceEditor({
               <Fragment key={field.name}>
                 <FieldRenderer
                   field={field}
-                  value={editing[field.name] ?? ""}
+                  value={getNestedValue(editing as Record<string, unknown>, field.name) ?? ""}
                   onChange={(val) => setField(field.name, val)}
                   allValues={editing}
                 />

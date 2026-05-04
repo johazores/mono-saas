@@ -5,6 +5,16 @@ import type { CmsPage, BlockTemplate } from "@/types";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7001";
 
 async function getPage(slug: string): Promise<CmsPage | null> {
+  // Special slug for homepage
+  if (slug === "__homepage") {
+    const res = await fetch(`${API_URL}/api/cms/public/homepage`, {
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.data ?? null;
+  }
+
   const res = await fetch(`${API_URL}/api/cms/public/pages/${slug}`, {
     next: { revalidate: 60 },
   });

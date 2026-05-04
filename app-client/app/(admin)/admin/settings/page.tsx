@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, type FormEvent } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { adminSettingService } from "@/services/admin-setting-service";
-import { PageHeader, Notice, Button } from "@/components/ui";
+import { PageHeader, Notice, Button, Tabs, FormField, FormSelect } from "@/components/ui";
 import type {
   AuthProvider,
   PaymentMode,
@@ -10,6 +11,14 @@ import type {
   PaymentSettings,
   ThemeTokens,
 } from "@/types";
+import { Shield, CreditCard, Globe, Palette } from "lucide-react";
+
+const TABS = [
+  { id: "auth", label: "Authentication", icon: <Shield size={16} /> },
+  { id: "payment", label: "Payment", icon: <CreditCard size={16} /> },
+  { id: "site", label: "Site Identity", icon: <Globe size={16} /> },
+  { id: "theme", label: "Theme", icon: <Palette size={16} /> },
+];
 
 const THEME_FIELDS: { key: keyof ThemeTokens; label: string }[] = [
   { key: "primary", label: "Primary" },
@@ -42,6 +51,12 @@ const DEFAULT_THEME: ThemeTokens = {
 };
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState(
+    searchParams.get("tab") || "auth",
+  );
+
   const [auth, setAuth] = useState<AuthSettings>({
     provider: "credentials",
     clerkPublishableKey: "",
@@ -70,6 +85,11 @@ export default function SettingsPage() {
   const [siteLogo, setSiteLogo] = useState("");
   const [siteLogoDark, setSiteLogoDark] = useState("");
   const [theme, setTheme] = useState<ThemeTokens>({ ...DEFAULT_THEME });
+
+  function handleTabChange(tabId: string) {
+    setActiveTab(tabId);
+    router.replace(`/admin/settings?tab=${tabId}`, { scroll: false });
+  }
 
   useEffect(() => {
     adminSettingService
@@ -173,489 +193,423 @@ export default function SettingsPage() {
     }
   }
 
-  const inputClass =
-    "mt-1 block w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
+  async function handleSiteSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSavingSite(true);
+    setSiteMessage("");
+    try {
+      await adminSettingService.update("site.title", siteTitle);
+      await adminSettingService.update("site.tagline", siteTagline);
+      await adminSettingService.update("site.favicon", siteFavicon);
+      await adminSettingService.update("site.logo", siteLogo);
+      await adminSettingService.update("site.logoDark", siteLogoDark);
+      setSiteMessage("Site settings saved successfully.");
+    } catch (err) {
+      setSiteMessage(
+        err instanceof Error ? err.message : "Failed to save.",
+      );
+    } finally {
+      setSavingSite(false);
+    }
+  }
+
+  async function handleThemeSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSavingTheme(true);
+    setThemeMessage("");
+    try {
+      for (const { key } of THEME_FIELDS) {
+        await adminSettingService.update(`theme.${key}`, theme[key] ?? "");
+      }
+      setThemeMessage("Theme saved successfully. Reload to see changes.");
+    } catch (err) {
+      setThemeMessage(
+        err instanceof Error ? err.message : "Failed to save.",
+      );
+    } finally {
+      setSavingTheme(false);
+    }
+  }
 
   if (loading) {
     return <p className="text-sm text-muted">Loading settings&hellip;</p>;
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="Settings"
         description="Configure site identity, theme, authentication, and payment."
       />
 
-      {/* Auth Settings */}
-      <section className="rounded-xl border border-border bg-background p-6">
-        <form onSubmit={handleAuthSubmit} className="max-w-lg space-y-5">
-          <h2 className="text-base font-semibold text-foreground">
-            Authentication
-          </h2>
+      <Tabs tabs={TABS} activeTab={activeTab} onChange={handleTabChange}>
+        {activeTab === "auth" && (
+          <section className="rounded-xl border border-border bg-background p-6">
+            <form onSubmit={handleAuthSubmit} className="max-w-lg space-y-5">
+              {authMessage && (
+                <Notice
+                  message={authMessage}
+                  variant={authMessage.includes("success") ? "success" : "error"}
+                />
+              )}
 
-          {authMessage && (
-            <Notice
-              message={authMessage}
-              variant={authMessage.includes("success") ? "success" : "error"}
-            />
-          )}
+              <FormSelect
+                id="auth-provider"
+                label="Authentication Provider"
+                value={auth.provider}
+                onChange={(e) =>
+                  setAuth((s) => ({
+                    ...s,
+                    provider: e.target.value as AuthProvider,
+                  }))
+                }
+                options={[
+                  { value: "credentials", label: "Credentials (email & password)" },
+                  { value: "clerk", label: "Clerk" },
+                ]}
+                hint="Switching to Clerk will disable email/password login for users. Admin authentication is always password-based."
+              />
 
-          <div>
-            <label className="block text-sm font-medium text-foreground">
-              Authentication Provider
-            </label>
-            <select
-              value={auth.provider}
-              onChange={(e) =>
-                setAuth((s) => ({
-                  ...s,
-                  provider: e.target.value as AuthProvider,
-                }))
-              }
-              className={inputClass}
-            >
-              <option value="credentials">
-                Credentials (email &amp; password)
-              </option>
-              <option value="clerk">Clerk</option>
-            </select>
-            <p className="mt-1 text-xs text-muted">
-              Switching to Clerk will disable email/password login for users.
-              Admin authentication is always password-based.
-            </p>
-          </div>
+              {auth.provider === "clerk" && (
+                <>
+                  <FormField
+                    id="clerk-publishable-key"
+                    label="Clerk Publishable Key"
+                    type="text"
+                    value={auth.clerkPublishableKey}
+                    onChange={(e) =>
+                      setAuth((s) => ({
+                        ...s,
+                        clerkPublishableKey: e.target.value,
+                      }))
+                    }
+                    placeholder="pk_test_..."
+                  />
+                  <FormField
+                    id="clerk-secret-key"
+                    label="Clerk Secret Key"
+                    type="password"
+                    value={auth.clerkSecretKey}
+                    onChange={(e) =>
+                      setAuth((s) => ({
+                        ...s,
+                        clerkSecretKey: e.target.value,
+                      }))
+                    }
+                    placeholder="sk_test_..."
+                    hint="Stored securely. Required for backend token verification."
+                  />
+                </>
+              )}
 
-          {auth.provider === "clerk" && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-foreground">
-                  Clerk Publishable Key
-                </label>
-                <input
+              <Button type="submit" loading={savingAuth}>
+                Save Auth Settings
+              </Button>
+            </form>
+          </section>
+        )}
+
+        {activeTab === "payment" && (
+          <section className="rounded-xl border border-border bg-background p-6">
+            <form onSubmit={handlePaymentSubmit} className="max-w-lg space-y-5">
+              {paymentMessage && (
+                <Notice
+                  message={paymentMessage}
+                  variant={paymentMessage.includes("success") ? "success" : "error"}
+                />
+              )}
+
+              <FormSelect
+                id="payment-provider"
+                label="Payment Provider"
+                value={payment.provider}
+                onChange={(e) =>
+                  setPayment((s) => ({ ...s, provider: e.target.value }))
+                }
+                options={[{ value: "stripe", label: "Stripe" }]}
+              />
+
+              <FormSelect
+                id="payment-mode"
+                label="Mode"
+                value={payment.mode}
+                onChange={(e) =>
+                  setPayment((s) => ({
+                    ...s,
+                    mode: e.target.value as PaymentMode,
+                  }))
+                }
+                options={[
+                  { value: "test", label: "Test" },
+                  { value: "live", label: "Live" },
+                ]}
+                hint="Test mode uses Stripe test keys. Switch to Live for real payments."
+              />
+
+              <div className="rounded-lg border border-border bg-surface p-4 space-y-4">
+                <h3 className="text-sm font-medium text-foreground">
+                  Test Mode Keys
+                </h3>
+                <FormField
+                  id="stripe-test-pk"
+                  label="Publishable Key"
                   type="text"
-                  value={auth.clerkPublishableKey}
+                  value={payment.stripeTestPublicKey}
                   onChange={(e) =>
-                    setAuth((s) => ({
+                    setPayment((s) => ({
                       ...s,
-                      clerkPublishableKey: e.target.value,
+                      stripeTestPublicKey: e.target.value,
                     }))
                   }
                   placeholder="pk_test_..."
-                  className={inputClass}
                 />
+                <FormField
+                  id="stripe-test-sk"
+                  label="Secret Key"
+                  type="password"
+                  value={payment.stripeTestSecretKey}
+                  onChange={(e) =>
+                    setPayment((s) => ({
+                      ...s,
+                      stripeTestSecretKey: e.target.value,
+                    }))
+                  }
+                  placeholder="sk_test_..."
+                />
+              </div>
+
+              <div className="rounded-lg border border-border bg-surface p-4 space-y-4">
+                <h3 className="text-sm font-medium text-foreground">
+                  Live Mode Keys
+                </h3>
+                <FormField
+                  id="stripe-live-pk"
+                  label="Publishable Key"
+                  type="text"
+                  value={payment.stripeLivePublicKey}
+                  onChange={(e) =>
+                    setPayment((s) => ({
+                      ...s,
+                      stripeLivePublicKey: e.target.value,
+                    }))
+                  }
+                  placeholder="pk_live_..."
+                />
+                <FormField
+                  id="stripe-live-sk"
+                  label="Secret Key"
+                  type="password"
+                  value={payment.stripeLiveSecretKey}
+                  onChange={(e) =>
+                    setPayment((s) => ({
+                      ...s,
+                      stripeLiveSecretKey: e.target.value,
+                    }))
+                  }
+                  placeholder="sk_live_..."
+                />
+              </div>
+
+              <Button type="submit" loading={savingPayment}>
+                Save Payment Settings
+              </Button>
+            </form>
+          </section>
+        )}
+
+        {activeTab === "site" && (
+          <section className="rounded-xl border border-border bg-background p-6">
+            <form onSubmit={handleSiteSubmit} className="max-w-lg space-y-5">
+              {siteMessage && (
+                <Notice
+                  message={siteMessage}
+                  variant={siteMessage.includes("success") ? "success" : "error"}
+                />
+              )}
+
+              <FormField
+                id="site-title"
+                label="Site Title"
+                type="text"
+                value={siteTitle}
+                onChange={(e) => setSiteTitle(e.target.value)}
+                placeholder="My Awesome Site"
+              />
+
+              <FormField
+                id="site-tagline"
+                label="Tagline"
+                type="text"
+                value={siteTagline}
+                onChange={(e) => setSiteTagline(e.target.value)}
+                placeholder="A brief description of your site"
+              />
+
+              <div>
+                <label className="block text-sm font-medium text-foreground">
+                  Favicon
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () =>
+                      setSiteFavicon(reader.result as string);
+                    reader.readAsDataURL(file);
+                  }}
+                  className="mt-1 block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                />
+                {siteFavicon && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <img
+                      src={siteFavicon}
+                      alt="Favicon preview"
+                      className="h-6 w-6 rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSiteFavicon("")}
+                      className="text-xs text-error"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-foreground">
-                  Clerk Secret Key
+                  Logo
                 </label>
                 <input
-                  type="password"
-                  value={auth.clerkSecretKey}
-                  onChange={(e) =>
-                    setAuth((s) => ({
-                      ...s,
-                      clerkSecretKey: e.target.value,
-                    }))
-                  }
-                  placeholder="sk_test_..."
-                  className={inputClass}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => setSiteLogo(reader.result as string);
+                    reader.readAsDataURL(file);
+                  }}
+                  className="mt-1 block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
                 />
+                {siteLogo && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <img
+                      src={siteLogo}
+                      alt="Logo preview"
+                      className="h-8 rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSiteLogo("")}
+                      className="text-xs text-error"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground">
+                  Logo (Dark variant)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () =>
+                      setSiteLogoDark(reader.result as string);
+                    reader.readAsDataURL(file);
+                  }}
+                  className="mt-1 block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
+                />
+                {siteLogoDark && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <img
+                      src={siteLogoDark}
+                      alt="Dark logo preview"
+                      className="h-8 rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSiteLogoDark("")}
+                      className="text-xs text-error"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
                 <p className="mt-1 text-xs text-muted">
-                  Stored securely. Required for backend token verification.
+                  Optional. Used when a dark background is active.
                 </p>
               </div>
-            </>
-          )}
 
-          <Button type="submit" disabled={savingAuth}>
-            {savingAuth ? "Saving\u2026" : "Save Auth Settings"}
-          </Button>
-        </form>
-      </section>
+              <Button type="submit" loading={savingSite}>
+                Save Site Settings
+              </Button>
+            </form>
+          </section>
+        )}
 
-      {/* Payment Settings */}
-      <section className="rounded-xl border border-border bg-background p-6">
-        <form onSubmit={handlePaymentSubmit} className="max-w-lg space-y-5">
-          <h2 className="text-base font-semibold text-foreground">Payment</h2>
+        {activeTab === "theme" && (
+          <section className="rounded-xl border border-border bg-background p-6">
+            <form onSubmit={handleThemeSubmit} className="max-w-lg space-y-5">
+              <p className="text-xs text-muted">
+                Customize the application color palette. Changes apply after page
+                reload.
+              </p>
 
-          {paymentMessage && (
-            <Notice
-              message={paymentMessage}
-              variant={paymentMessage.includes("success") ? "success" : "error"}
-            />
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-foreground">
-              Payment Provider
-            </label>
-            <select
-              value={payment.provider}
-              onChange={(e) =>
-                setPayment((s) => ({ ...s, provider: e.target.value }))
-              }
-              className={inputClass}
-            >
-              <option value="stripe">Stripe</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground">
-              Mode
-            </label>
-            <select
-              value={payment.mode}
-              onChange={(e) =>
-                setPayment((s) => ({
-                  ...s,
-                  mode: e.target.value as PaymentMode,
-                }))
-              }
-              className={inputClass}
-            >
-              <option value="test">Test</option>
-              <option value="live">Live</option>
-            </select>
-            <p className="mt-1 text-xs text-muted">
-              Test mode uses Stripe test keys. Switch to Live for real payments.
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-border bg-surface p-4 space-y-4">
-            <h3 className="text-sm font-medium text-foreground">
-              Test Mode Keys
-            </h3>
-            <div>
-              <label className="block text-xs font-medium text-muted">
-                Publishable Key
-              </label>
-              <input
-                type="text"
-                value={payment.stripeTestPublicKey}
-                onChange={(e) =>
-                  setPayment((s) => ({
-                    ...s,
-                    stripeTestPublicKey: e.target.value,
-                  }))
-                }
-                placeholder="pk_test_..."
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted">
-                Secret Key
-              </label>
-              <input
-                type="password"
-                value={payment.stripeTestSecretKey}
-                onChange={(e) =>
-                  setPayment((s) => ({
-                    ...s,
-                    stripeTestSecretKey: e.target.value,
-                  }))
-                }
-                placeholder="sk_test_..."
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-border bg-surface p-4 space-y-4">
-            <h3 className="text-sm font-medium text-foreground">
-              Live Mode Keys
-            </h3>
-            <div>
-              <label className="block text-xs font-medium text-muted">
-                Publishable Key
-              </label>
-              <input
-                type="text"
-                value={payment.stripeLivePublicKey}
-                onChange={(e) =>
-                  setPayment((s) => ({
-                    ...s,
-                    stripeLivePublicKey: e.target.value,
-                  }))
-                }
-                placeholder="pk_live_..."
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted">
-                Secret Key
-              </label>
-              <input
-                type="password"
-                value={payment.stripeLiveSecretKey}
-                onChange={(e) =>
-                  setPayment((s) => ({
-                    ...s,
-                    stripeLiveSecretKey: e.target.value,
-                  }))
-                }
-                placeholder="sk_live_..."
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <Button type="submit" disabled={savingPayment}>
-            {savingPayment ? "Saving\u2026" : "Save Payment Settings"}
-          </Button>
-        </form>
-      </section>
-
-      {/* Site Identity */}
-      <section className="rounded-xl border border-border bg-background p-6">
-        <form
-          onSubmit={async (e: FormEvent) => {
-            e.preventDefault();
-            setSavingSite(true);
-            setSiteMessage("");
-            try {
-              await adminSettingService.update("site.title", siteTitle);
-              await adminSettingService.update("site.tagline", siteTagline);
-              await adminSettingService.update("site.favicon", siteFavicon);
-              await adminSettingService.update("site.logo", siteLogo);
-              await adminSettingService.update("site.logoDark", siteLogoDark);
-              setSiteMessage("Site settings saved successfully.");
-            } catch (err) {
-              setSiteMessage(
-                err instanceof Error ? err.message : "Failed to save.",
-              );
-            } finally {
-              setSavingSite(false);
-            }
-          }}
-          className="max-w-lg space-y-5"
-        >
-          <h2 className="text-base font-semibold text-foreground">
-            Site Identity
-          </h2>
-
-          {siteMessage && (
-            <Notice
-              message={siteMessage}
-              variant={siteMessage.includes("success") ? "success" : "error"}
-            />
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-foreground">
-              Site Title
-            </label>
-            <input
-              type="text"
-              value={siteTitle}
-              onChange={(e) => setSiteTitle(e.target.value)}
-              placeholder="My Awesome Site"
-              className={inputClass}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground">
-              Tagline
-            </label>
-            <input
-              type="text"
-              value={siteTagline}
-              onChange={(e) => setSiteTagline(e.target.value)}
-              placeholder="A brief description of your site"
-              className={inputClass}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground">
-              Favicon
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => setSiteFavicon(reader.result as string);
-                reader.readAsDataURL(file);
-              }}
-              className="mt-1 block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-            />
-            {siteFavicon && (
-              <div className="mt-2 flex items-center gap-2">
-                <img
-                  src={siteFavicon}
-                  alt="Favicon preview"
-                  className="h-6 w-6 rounded"
+              {themeMessage && (
+                <Notice
+                  message={themeMessage}
+                  variant={themeMessage.includes("success") ? "success" : "error"}
                 />
-                <button
-                  type="button"
-                  onClick={() => setSiteFavicon("")}
-                  className="text-xs text-error"
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                {THEME_FIELDS.map(({ key, label }) => (
+                  <div key={key} className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={theme[key] || "#000000"}
+                      onChange={(e) =>
+                        setTheme((t) => ({ ...t, [key]: e.target.value }))
+                      }
+                      className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">
+                        {label}
+                      </p>
+                      <p className="text-xs text-muted">{theme[key]}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Button type="submit" loading={savingTheme}>
+                  Save Theme
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => setTheme({ ...DEFAULT_THEME })}
                 >
-                  Remove
-                </button>
+                  Reset to Defaults
+                </Button>
               </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground">
-              Logo
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => setSiteLogo(reader.result as string);
-                reader.readAsDataURL(file);
-              }}
-              className="mt-1 block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-            />
-            {siteLogo && (
-              <div className="mt-2 flex items-center gap-2">
-                <img
-                  src={siteLogo}
-                  alt="Logo preview"
-                  className="h-8 rounded"
-                />
-                <button
-                  type="button"
-                  onClick={() => setSiteLogo("")}
-                  className="text-xs text-error"
-                >
-                  Remove
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-foreground">
-              Logo (Dark variant)
-            </label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => setSiteLogoDark(reader.result as string);
-                reader.readAsDataURL(file);
-              }}
-              className="mt-1 block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-surface file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground"
-            />
-            {siteLogoDark && (
-              <div className="mt-2 flex items-center gap-2">
-                <img
-                  src={siteLogoDark}
-                  alt="Dark logo preview"
-                  className="h-8 rounded"
-                />
-                <button
-                  type="button"
-                  onClick={() => setSiteLogoDark("")}
-                  className="text-xs text-error"
-                >
-                  Remove
-                </button>
-              </div>
-            )}
-            <p className="mt-1 text-xs text-muted">
-              Optional. Used when a dark background is active.
-            </p>
-          </div>
-
-          <Button type="submit" disabled={savingSite}>
-            {savingSite ? "Saving\u2026" : "Save Site Settings"}
-          </Button>
-        </form>
-      </section>
-
-      {/* Theme Colors */}
-      <section className="rounded-xl border border-border bg-background p-6">
-        <form
-          onSubmit={async (e: FormEvent) => {
-            e.preventDefault();
-            setSavingTheme(true);
-            setThemeMessage("");
-            try {
-              for (const { key } of THEME_FIELDS) {
-                await adminSettingService.update(
-                  `theme.${key}`,
-                  theme[key] ?? "",
-                );
-              }
-              setThemeMessage(
-                "Theme saved successfully. Reload to see changes.",
-              );
-            } catch (err) {
-              setThemeMessage(
-                err instanceof Error ? err.message : "Failed to save.",
-              );
-            } finally {
-              setSavingTheme(false);
-            }
-          }}
-          className="max-w-lg space-y-5"
-        >
-          <h2 className="text-base font-semibold text-foreground">
-            Theme Colors
-          </h2>
-          <p className="text-xs text-muted">
-            Customize the application color palette. Changes apply after page
-            reload.
-          </p>
-
-          {themeMessage && (
-            <Notice
-              message={themeMessage}
-              variant={themeMessage.includes("success") ? "success" : "error"}
-            />
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            {THEME_FIELDS.map(({ key, label }) => (
-              <div key={key} className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={theme[key] || "#000000"}
-                  onChange={(e) =>
-                    setTheme((t) => ({ ...t, [key]: e.target.value }))
-                  }
-                  className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-0.5"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">{label}</p>
-                  <p className="text-xs text-muted">{theme[key]}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button type="submit" disabled={savingTheme}>
-              {savingTheme ? "Saving\u2026" : "Save Theme"}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => setTheme({ ...DEFAULT_THEME })}
-            >
-              Reset to Defaults
-            </Button>
-          </div>
-        </form>
-      </section>
+            </form>
+          </section>
+        )}
+      </Tabs>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useState, useEffect } from "react";
 import { userAuthService } from "@/services/user-auth-service";
 import { useSiteConfig } from "@/components/providers/site-config-provider";
 import type { AppUser } from "@/types";
@@ -16,6 +16,8 @@ import {
   LogOut,
   Menu,
   X,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -41,6 +43,20 @@ export function UserShell({
   const navigation = baseNavigation;
   const { title, logo } = useSiteConfig();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("sidebar-user-collapsed");
+    if (stored === "true") setCollapsed(true);
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("sidebar-user-collapsed", String(next));
+      return next;
+    });
+  }
 
   async function handleLogout() {
     try {
@@ -62,24 +78,35 @@ export function UserShell({
 
   const sidebar = (
     <>
-      <div className="px-5 py-6">
+      <div className={`py-6 ${collapsed ? "px-2 flex flex-col items-center" : "px-5"}`}>
         <div className="flex items-center gap-3">
           {logo ? (
             <img src={logo} alt={title} className="h-8" />
           ) : (
-            <h1 className="text-lg font-bold tracking-tight text-foreground">
-              {title}
-            </h1>
+            !collapsed && (
+              <h1 className="text-lg font-bold tracking-tight text-foreground">
+                {title}
+              </h1>
+            )
+          )}
+          {collapsed && !logo && (
+            <span className="text-lg font-bold text-foreground">
+              {title.charAt(0)}
+            </span>
           )}
         </div>
-        <span className="mt-2 inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-          {planName}
-        </span>
+        {!collapsed && (
+          <span className="mt-2 inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+            {planName}
+          </span>
+        )}
       </div>
 
-      <p className="mb-2 px-5 text-[11px] font-semibold uppercase tracking-wider text-muted">
-        Navigation
-      </p>
+      {!collapsed && (
+        <p className="mb-2 px-5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+          Navigation
+        </p>
+      )}
 
       <nav className="flex-1 px-3">
         <ul className="grid gap-0.5">
@@ -91,7 +118,10 @@ export function UserShell({
                 <Link
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
+                  title={collapsed ? item.label : undefined}
                   className={`group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150 ${
+                    collapsed ? "justify-center" : ""
+                  } ${
                     active
                       ? "bg-primary text-white shadow-sm"
                       : "text-muted hover:bg-surface hover:text-foreground"
@@ -105,7 +135,7 @@ export function UserShell({
                         : "text-muted group-hover:text-foreground"
                     }
                   />
-                  {item.label}
+                  {!collapsed && item.label}
                 </Link>
               </li>
             );
@@ -114,28 +144,38 @@ export function UserShell({
       </nav>
 
       <div className="border-t border-border px-4 py-4">
-        <div className="flex items-center gap-3 px-1">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-            {initials}
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-foreground">
-              {user.name}
-            </p>
-            <p className="truncate text-xs text-muted">{user.email}</p>
+        {!collapsed && (
+          <div className="flex items-center gap-3 px-1">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+              {initials}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-foreground">
+                {user.name}
+              </p>
+              <p className="truncate text-xs text-muted">{user.email}</p>
+            </div>
           </div>
-        </div>
-        {user.parent && (
+        )}
+        {collapsed && (
+          <div className="flex justify-center">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+              {initials}
+            </span>
+          </div>
+        )}
+        {!collapsed && user.parent && (
           <p className="mt-2 truncate px-1 text-xs text-muted">
             Account owner: {user.parent.name}
           </p>
         )}
         <button
           onClick={handleLogout}
-          className="mt-3 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted transition-colors hover:bg-surface hover:text-foreground"
+          title={collapsed ? "Sign out" : undefined}
+          className={`mt-3 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted transition-colors hover:bg-surface hover:text-foreground ${collapsed ? "justify-center" : ""}`}
         >
           <LogOut size={16} />
-          Sign out
+          {!collapsed && "Sign out"}
         </button>
       </div>
     </>
@@ -144,8 +184,21 @@ export function UserShell({
   return (
     <div className="flex min-h-full bg-surface/50">
       {/* Desktop sidebar */}
-      <aside className="hidden w-60 shrink-0 border-r border-border bg-background lg:flex lg:flex-col">
+      <aside
+        className={`hidden shrink-0 border-r border-border bg-background transition-all duration-200 lg:flex lg:flex-col relative ${
+          collapsed ? "w-[68px]" : "w-60"
+        }`}
+      >
         {sidebar}
+        {/* Collapse toggle button */}
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          className="absolute -right-3 top-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background text-muted shadow-sm transition-colors hover:text-foreground hover:bg-surface"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+        </button>
       </aside>
 
       {/* Mobile overlay */}
