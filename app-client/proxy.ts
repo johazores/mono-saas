@@ -20,6 +20,7 @@ const STATIC_PREFIXES = [
   "/login",
   "/user-login",
   "/user-register",
+  "/accept-invitation",
   "/cart",
   "/checkout",
   "/my-account",
@@ -34,7 +35,7 @@ const STATIC_PREFIXES = [
   "/favicon",
 ];
 
-export async function middleware(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Skip known static prefixes and file requests

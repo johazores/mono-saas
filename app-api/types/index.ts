@@ -129,3 +129,9 @@ export type {
   DocumentItem,
   GalleryImage,
 } from "./cms";
+export type {
+  InvitationStatus,
+  InvitationRecord,
+  CreateInvitationInput,
+  AcceptInvitationInput,
+} from "./invitation";

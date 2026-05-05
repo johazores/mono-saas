@@ -55,7 +55,12 @@ export type ActivityAction =
   | "media.delete"
   | "block-template.create"
   | "block-template.update"
-  | "block-template.delete";
+  | "block-template.delete"
+  | "user.impersonate_start"
+  | "user.impersonate_stop"
+  | "user.invite"
+  | "user.invite_accept"
+  | "user.invite_revoke";
 
 export type ActivityActor = "admin" | "user" | "system";
 

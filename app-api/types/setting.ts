@@ -43,5 +43,6 @@ export type SiteConfig = {
   favicon: string;
   logo: string;
   logoDark: string;
+  authQuote: string;
   theme: ThemeTokens;
 };

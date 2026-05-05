@@ -61,6 +61,7 @@ export type ResourceManagerProps = {
   getTitle: (item: ResourceItem) => string;
   getSubtitle?: (item: ResourceItem) => string;
   emptyItem: ResourceItem;
+  headerAction?: React.ReactNode;
   renderItemActions?: (item: ResourceItem) => React.ReactNode;
   renderEditorExtra?: (
     item: ResourceItem,

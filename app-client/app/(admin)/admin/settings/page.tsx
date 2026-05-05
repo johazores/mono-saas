@@ -81,6 +81,7 @@ export default function SettingsPage() {
   const [themeMessage, setThemeMessage] = useState("");
   const [siteTitle, setSiteTitle] = useState("");
   const [siteTagline, setSiteTagline] = useState("");
+  const [siteAuthQuote, setSiteAuthQuote] = useState("");
   const [siteFavicon, setSiteFavicon] = useState("");
   const [siteLogo, setSiteLogo] = useState("");
   const [siteLogoDark, setSiteLogoDark] = useState("");
@@ -120,6 +121,7 @@ export default function SettingsPage() {
           });
           setSiteTitle((map.get("site.title") as string) || "");
           setSiteTagline((map.get("site.tagline") as string) || "");
+          setSiteAuthQuote((map.get("site.authQuote") as string) || "");
           setSiteFavicon((map.get("site.favicon") as string) || "");
           setSiteLogo((map.get("site.logo") as string) || "");
           setSiteLogoDark((map.get("site.logoDark") as string) || "");
@@ -200,6 +202,7 @@ export default function SettingsPage() {
     try {
       await adminSettingService.update("site.title", siteTitle);
       await adminSettingService.update("site.tagline", siteTagline);
+      await adminSettingService.update("site.authQuote", siteAuthQuote);
       await adminSettingService.update("site.favicon", siteFavicon);
       await adminSettingService.update("site.logo", siteLogo);
       await adminSettingService.update("site.logoDark", siteLogoDark);
@@ -444,6 +447,23 @@ export default function SettingsPage() {
                 onChange={(e) => setSiteTagline(e.target.value)}
                 placeholder="A brief description of your site"
               />
+
+              <div>
+                <label htmlFor="site-auth-quote" className="block text-sm font-medium text-foreground">
+                  Auth Page Quote
+                </label>
+                <textarea
+                  id="site-auth-quote"
+                  rows={3}
+                  value={siteAuthQuote}
+                  onChange={(e) => setSiteAuthQuote(e.target.value)}
+                  placeholder="Shown on the login & register branding panel. Leave empty for default."
+                  className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+                <p className="mt-1 text-xs text-muted">
+                  Displayed on the left panel of login and register pages.
+                </p>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-foreground">

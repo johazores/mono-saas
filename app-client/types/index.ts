@@ -93,3 +93,9 @@ export type {
   BlockTemplate,
   FlexibleBlock,
 } from "./cms";
+export type {
+  InvitationStatus,
+  Invitation,
+  CreateInvitationInput,
+  CreateInvitationResult,
+} from "./invitation";

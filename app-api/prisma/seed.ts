@@ -1,6 +1,7 @@
 import { prisma } from "../lib/prisma";
 import { hashPassword } from "../lib/password";
 import { getAppEnv } from "../lib/env";
+import { getUserSessionSecret } from "../lib/secure-credentials";
 
 async function main() {
   const env = getAppEnv();
@@ -596,6 +597,37 @@ async function main() {
     console.log("PurchaseFile seeded: starter-guide.txt for Demo User");
   } else {
     console.log("PurchaseFile already exists: starter-guide.txt");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Seed sample user invitation (demonstrates the invitation system)
+  // ---------------------------------------------------------------------------
+  const crypto = await import("crypto");
+  const inviteToken = crypto.randomBytes(32).toString("base64url");
+  const inviteHash = crypto
+    .createHmac("sha256", getUserSessionSecret())
+    .update(inviteToken)
+    .digest("hex");
+
+  const existingInvite = await prisma.userInvitation.findFirst({
+    where: { env, email: "invited@demo.com" },
+  });
+  if (!existingInvite) {
+    await prisma.userInvitation.create({
+      data: {
+        env,
+        email: "invited@demo.com",
+        name: "Invited User",
+        tokenHash: inviteHash,
+        status: "pending",
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        invitedBy: admin.id,
+      },
+    });
+    console.log("UserInvitation seeded: invited@demo.com (pending)");
+    console.log(`  Accept link: /accept-invitation?token=${inviteToken}`);
+  } else {
+    console.log("UserInvitation already exists: invited@demo.com");
   }
 
   // ---------------------------------------------------------------------------

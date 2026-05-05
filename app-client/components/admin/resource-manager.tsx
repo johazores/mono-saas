@@ -15,6 +15,7 @@ export function ResourceManager({
   getTitle,
   getSubtitle,
   emptyItem,
+  headerAction,
   renderItemActions,
   renderEditorExtra,
 }: ResourceManagerProps) {
@@ -67,14 +68,16 @@ export function ResourceManager({
         title={title}
         description={`Manage your ${title.toLowerCase()} from here.`}
         action={
-          <Button
-            onClick={() => {
-              setEditingItem(emptyItem);
-              setNotice(null);
-            }}
-          >
-            Add New
-          </Button>
+          headerAction ?? (
+            <Button
+              onClick={() => {
+                setEditingItem(emptyItem);
+                setNotice(null);
+              }}
+            >
+              Add New
+            </Button>
+          )
         }
       />
 

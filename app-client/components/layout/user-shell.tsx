@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useState, useEffect } from "react";
 import { userAuthService } from "@/services/user-auth-service";
+import { useAuthConfig } from "@/components/auth/auth-config-provider";
 import { useSiteConfig } from "@/components/providers/site-config-provider";
 import type { AppUser } from "@/types";
 import {
@@ -42,6 +43,7 @@ export function UserShell({
   const pathname = usePathname();
   const navigation = baseNavigation;
   const { title, logo } = useSiteConfig();
+  const { signOut: contextSignOut } = useAuthConfig();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -62,8 +64,20 @@ export function UserShell({
     try {
       await userAuthService.logout();
     } catch {
-      // Redirect even if the API call fails (expired session, network error)
+      // Continue even if the API call fails (expired session, network error)
     }
+    try {
+      await contextSignOut();
+    } catch {
+      // Clerk signOut may fail if not in Clerk mode
+    }
+    // Clear any client-side cookies that the browser can access
+    document.cookie.split(";").forEach((c) => {
+      const name = c.split("=")[0].trim();
+      if (name) {
+        document.cookie = `${name}=; Path=/; Max-Age=0;`;
+      }
+    });
     window.location.href = "/user-login";
   }
 
@@ -238,6 +252,25 @@ export function UserShell({
             {title}
           </span>
         </div>
+        {user.impersonation && (
+          <div className="flex items-center justify-between bg-amber-100 px-4 py-2 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
+            <span>
+              Viewing as <strong>{user.name}</strong> — impersonated by{" "}
+              {user.impersonation.adminName}
+            </span>
+            <button
+              onClick={async () => {
+                await userAuthService.stopImpersonation();
+                window.close();
+                // Fallback if window.close() is blocked (not opened via script)
+                window.location.href = "/admin/users";
+              }}
+              className="rounded bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700"
+            >
+              Return to Admin
+            </button>
+          </div>
+        )}
         <div className="px-6 py-8 lg:px-10">{children}</div>
       </main>
     </div>

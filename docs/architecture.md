@@ -88,6 +88,7 @@ app-api/
 │   ├── membership.ts  <- MembershipType, MembershipStatus, MembershipRecord
 │   ├── feature.ts     <- FeatureRecord, FeatureDefinition, FeatureCheckResult
 │   ├── report.ts      <- RevenueSummary, SubscriptionStats, PurchaseStats, UserStats, UserActivityReport
+│   ├── invitation.ts  <- InvitationStatus, InvitationRecord, CreateInvitationInput, AcceptInvitationInput
 │   ├── activity-log.ts <- ActivityAction, ActivityActor, ActivityLogRecord, ActivityLogFilter
 │   ├── rate-limiter.ts <- RateLimitEntry, RateLimitConfig, RateLimitResult
 │   ├── response.ts    <- ApiResponse<T>, ListResponse<T>
@@ -117,6 +118,8 @@ app-api/
 - **Rate limiting**: In-memory sliding window limiter per IP (admin login: 5/15min, user login: 10/15min)
 - **Activity logging**: Fire-and-forget audit trail via `logActivity()` — captures IP, user agent, HTTP method, request path
 - **Dual cookie-based sessions**: Separate `admin_session` (7d) and `user_session` (14d) cookies
+- **User impersonation**: Admins can impersonate users via HMAC-signed `admin_impersonating` cookie. Creates a real user session while preserving the admin session. The `/me` endpoint returns an `impersonation` field so the UI can show a return-to-admin banner. Only the `admin` role can impersonate.
+- **User invitations**: Admins can invite users via token-based link (credentials mode) or Clerk Invitations API (Clerk mode). Invitations expire after 7 days. Accept endpoint is rate-limited (5 attempts/IP/15min). Local `UserInvitation` records track status in both modes.
 - **Secure admin URLs**: Admin auth endpoints served from `/api/panel/*` (non-predictable path)
 - **Product and purchase management**: Products stored in DB with type (physical, digital, membership) and payment model (one-time, recurring). Users linked via Purchase model with full history. Recurring purchases serve as subscriptions.
 - **User hierarchy**: Users can create sub-users. Sub-users dynamically inherit the parent's subscription plan and features at runtime (no separate purchase or membership is created). If a sub-user independently purchases a subscription that includes `sub-users.create` and allows sub-users (`maxSubUsers != 0`), they can create their own sub-users. Revoking a sub-user detaches them from the parent (clears `parentId`/`ancestors`), so the account remains active and independent but loses inherited features. The `parentId` and `ancestors` fields on the User model track the relationship.
@@ -138,6 +141,7 @@ app-api/
   - `AdminSession` — Admin auth sessions (adminId -> Admin, tokenHash, expiresAt)
   - `User` — Application users (env, name, email, passwordHash, clerkId, stripeCustomerId, status, parentId -> User, ancestors, failedLoginAttempts, lockedUntil, lastLoginAt, phone, address as JSON) `@@unique([env, email])` `@@index([env, clerkId])`
   - `UserSession` — User auth sessions (env, userId -> User, tokenHash, expiresAt)
+  - `UserInvitation` — Invitation tokens for user registration (env, email, name, tokenHash unique, status pending|accepted|expired, expiresAt, invitedBy as admin ObjectId) `@@index([env, email])`
   - `Product` — Purchasable items (env, name, slug, description, type, price, currency, paymentModel, maxSubUsers, accessKeys, stripeTestProductId, stripeLiveProductId, metadata, isActive, sortOrder) `@@unique([env, slug])`
   - `ProductPrice` — Multiple Stripe prices per product with date ranges (env, productId -> Product, label, stripePriceId, mode test|live, amount, currency, interval, startDate, endDate, isDefault, metadata). Active price resolved at checkout by date range and default flag.
   - `Purchase` — User purchases and subscriptions (env, userId -> User, productId -> Product, status, amount, currency, externalId, startDate, endDate, cancelledAt, metadata)
@@ -173,6 +177,7 @@ app-client/
 │   │       ├── page.tsx       <- Dashboard (/admin)
 │   │       ├── admins/        <- Admin account management (/admin/admins)
 │   │       ├── users/         <- User management (/admin/users)
+│       │   └── invitations/ <- User invitation management (/admin/users/invitations)
 │   │       ├── products/      <- Product management (/admin/products)
 │   │       │   └── [productId]/prices/ <- Product price management
 │   │       ├── features/      <- Feature flag management (/admin/features)
@@ -199,6 +204,7 @@ app-client/
 │       ├── login/     <- Admin login form
 │       ├── user-login/ <- User login form
 │       ├── user-register/ <- User registration form
+│       ├── accept-invitation/ <- Accept invitation and set password
 │       ├── cart/      <- Shopping cart with checkout initiation
 │       ├── checkout/  <- Success and cancellation pages
 │       ├── p/[slug]/  <- CMS page rendering (SSR with block templates)
@@ -213,14 +219,15 @@ app-client/
 │   └── content/       <- Content rendering (DefaultContentRenderer — WordPress-like fallback for any content type)
 ├── hooks/             <- Custom React hooks (useAdminAuth, useUserAuth, useAdminResource, useFeatures, useCart)
 ├── lib/               <- Shared utilities (swr.ts — fetchers and SWR configuration)
-├── services/          <- API client layer (api-client, auth-service, user-auth-service, resource-service, sub-user-service, purchase-service, billing-service, report-service, activity-log-service, admin-setting-service, checkout-service, download-service, cms-service)
+├── services/          <- API client layer (api-client, auth-service, user-auth-service, invitation-service, resource-service, sub-user-service, purchase-service, billing-service, report-service, activity-log-service, admin-setting-service, checkout-service, download-service, cms-service)
 └── types/             <- Shared type definitions (barrel-exported via index.ts)
     ├── api.ts         <- ApiResult<T>, ApiRequestOptions, ResourceListResult<T>
     ├── resource.ts    <- ResourceField, ResourceItem, FieldType, EditorSection, FieldRendererProps, DynamicOption, ResourceManagerProps, ResourceEditorProps, ResourceListProps
     ├── ui.ts          <- ButtonVariant, ButtonProps, StatusBadgeProps, NoticeProps, ModalProps, NavItem, StatCardProps, DashboardCardProps, PageHeaderProps, FormFieldProps, FormSectionProps, EmptyStateProps
     ├── hooks.ts       <- FeaturesState, AdminResourceState<T>, AuthConfigContextValue, CartContextValue
     ├── auth.ts        <- AuthUser, UpdateAdminProfileInput
-    ├── user.ts        <- AppUser, UpdateUserProfileInput
+    ├── user.ts        <- AppUser (includes optional impersonation field), UpdateUserProfileInput
+    ├── invitation.ts  <- InvitationStatus, Invitation, CreateInvitationInput, CreateInvitationResult
     ├── sub-user.ts    <- SubUser, CreateSubUserInput
     ├── feature.ts     <- FeatureFlag (key, description, category, enabled, source)
     ├── product.ts     <- Product, ProductType, PaymentModel
@@ -400,3 +407,6 @@ These rules apply to all code across both applications. Follow them when adding 
 - Admin guard: Cannot delete/demote the last active admin user
 - Account lockout fields: `failedLoginAttempts` and `lockedUntil` on Admin and User models
 - User sessions limited to 14 days; admin sessions limited to 7 days
+- Impersonation cookie is HMAC-signed to prevent forgery; timing-safe comparison for signature validation
+- Invitation tokens stored as HMAC-SHA256 hashes (raw token never persisted in DB)
+- Invitation accept endpoint rate-limited to 5 attempts per IP per 15 minutes

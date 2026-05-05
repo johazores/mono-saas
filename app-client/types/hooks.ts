@@ -20,6 +20,7 @@ export type AuthConfigContextValue = {
   clerkPublishableKey: string;
   ready: boolean;
   getToken: () => Promise<string | null>;
+  signOut: () => Promise<void>;
 };
 
 export type CartContextValue = {

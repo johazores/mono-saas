@@ -172,5 +172,5 @@ export async function userMeController(
   // Sync Stripe data in background on session check (non-blocking)
   billingService.syncInBackground(session.user.id);
 
-  sendOk(res, session.user);
+  sendOk(res, { ...session.user, impersonation: session.impersonation });
 }

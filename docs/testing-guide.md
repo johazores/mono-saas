@@ -80,6 +80,14 @@ pnpm setup:api      # install + push + seed in one command
 | **User**     | `user@demo.com`   | `ChangeMe123!` | Starter plan, parent of sub-user     |
 | **Sub-User** | `sub@demo.com`    | `ChangeMe123!` | Inherits Starter features via parent |
 
+### Seeded Invitation
+
+| Email              | Status  | Expires     | Notes                                                 |
+| ------------------ | ------- | ----------- | ----------------------------------------------------- |
+| `invited@demo.com` | pending | 7 days      | Accept link printed to console during `pnpm db:seed`  |
+
+The seed script prints the accept link to the console. Copy it and open it in a browser to test the invitation acceptance flow.
+
 ### Seeded Data
 
 | Products           | Price     | Type                   | Max Sub-Users |
@@ -103,7 +111,7 @@ pnpm setup:api      # install + push + seed in one command
 | `site.tagline`             | (empty)       | Site tagline            |
 | `site.favicon`             | (empty)       | Favicon URL             |
 | `site.logo`                | (empty)       | Logo URL                |
-| `site.logoDark`            | (empty)       | Dark mode logo URL      |
+| `site.authQuote`             | (empty)       | Auth page quote         |
 | `theme.primary`            | `#2563eb`     | Primary brand color     |
 | `theme.primaryHover`       | `#1d4ed8`     | Primary hover state     |
 | `theme.accent`             | `#7c3aed`     | Accent color            |
@@ -127,7 +135,7 @@ Tests use **Vitest** and mock all repositories — no database connection needed
 
 ```bash
 # From the repo root
-pnpm test            # single run (211 tests)
+pnpm test            # single run (250 tests)
 pnpm test:watch      # watch mode for development
 ```
 
@@ -159,8 +167,9 @@ pnpm test
 | `tests/services/report-service.test.ts`        | 5     | Admin dashboard aggregation, user reports              |
 | `tests/services/setting-service.test.ts`       | 21    | Setting get/set, auth/payment/site config, validation  |
 | `tests/services/billing-service.test.ts`       | 11    | Stripe customer sync, subscriptions, invoices          |
-| `tests/services/checkout-service.test.ts`      | 15    | Checkout session creation, verification, guest flow    |
-
+| `tests/services/checkout-service.test.ts`      | 15    | Checkout session creation, verification, guest flow    || `tests/services/invitation-service.test.ts`  | 15    | Invitation create, accept, revoke, validation, edge cases |
+| `tests/services/page-service.test.ts`        | 12    | CMS page CRUD, slug uniqueness, homepage handling      |
+| `tests/services/content-item-service.test.ts`| 13    | Content item CRUD, slug generation, type validation    |
 ### Detailed Test Breakdown
 
 **Admin Service (22 tests):**
@@ -194,6 +203,13 @@ pnpm test
 
 - Creates log entries, lists with pagination, handles missing data gracefully, swallows errors without throwing
 
+**Invitation Service (15 tests):**
+
+- `create` — generates token, normalizes email, rejects empty email
+- `accept` — valid token, missing token/password, short password, invalid token, already-used invitation, expired invitation, name fallback to email, null register result
+- `list` — returns all invitations
+- `revoke` — revokes pending, rejects not-found, rejects non-pending
+
 ### Expected Output
 
 ```
@@ -213,11 +229,14 @@ pnpm test
  ✓ tests/services/setting-service.test.ts (21 tests)
  ✓ tests/services/billing-service.test.ts (11 tests)
  ✓ tests/services/checkout-service.test.ts (15 tests)
+ ✓ tests/services/invitation-service.test.ts (15 tests)
+ ✓ tests/services/page-service.test.ts (12 tests)
+ ✓ tests/services/content-item-service.test.ts (13 tests)
  ✓ tests/services/user-service.test.ts (37 tests)
  ✓ tests/services/admin-service.test.ts (22 tests)
 
- Test Files  18 passed (18)
-      Tests  211 passed (211)
+ Test Files  21 passed (21)
+      Tests  250 passed (250)
 ```
 
 > Tests also run automatically before every build via the `prebuild` hook. If any test fails, the build is blocked.
@@ -561,7 +580,27 @@ If a sub-user independently purchases a subscription that includes `sub-users.cr
 6. The purchase appears in your history table with status "completed"
 7. Click **Features** — `api.access` now appears with a "Subscription" source badge
 
-#### Scenario 5: Admin creates a new feature and adds it to a plan
+#### Scenario 5: Admin invites a user (credentials mode)
+
+1. Login as admin at http://localhost:7000/login
+2. Click **Users** in the sidebar
+3. Click **Invite User** to open the invitation modal
+4. Enter email `newuser@test.com` and name `New User`, click **Send Invitation**
+5. A green box appears with a copyable invitation link
+6. Copy the link and open it in a new browser/incognito window
+7. Enter a name and password (8+ chars with uppercase, lowercase, digit)
+8. Submit — you should see "Account Created!" with a link to login
+9. Login with the new credentials at http://localhost:7000/user-login
+10. Back in the admin panel, the invitation status should show "accepted"
+
+#### Scenario 6: Admin revokes an invitation
+
+1. Login as admin and invite a user (see Scenario 5)
+2. Before the invited user accepts, click **Revoke** next to the invitation
+3. The status changes to "expired"
+4. Try opening the invitation link — it should show an error
+
+#### Scenario 7: Admin creates a new feature and adds it to a plan
 
 1. Login as admin at http://localhost:7000/login
 2. Click **Features** in the sidebar
@@ -569,30 +608,30 @@ If a sub-user independently purchases a subscription that includes `sub-users.cr
 4. Click **Products** and edit the Pro product — add `analytics.realtime` to its access keys list
 5. Login as a Pro user — click **Features** and confirm `analytics.realtime` appears with "Subscription" source
 
-#### Scenario 6: Admin manually grants features to a user
+#### Scenario 8: Admin manually grants features to a user
 
 1. Login as admin at http://localhost:7000/login
 2. Grant a membership via API: `POST /api/admins/memberships` with `{ "userId": "<id>", "sourceId": "manual-grant", "featureKeys": ["reports.advanced"] }`
 3. Login as that user — click **Features** and confirm `reports.advanced` appears with "Subscription" source
 
-#### Scenario 7: Verify admin reports
+#### Scenario 9: Verify admin reports
 
 1. Login as admin at http://localhost:7000/login
 2. Click **Reports** in the sidebar
 3. Switch between time periods (7d, 30d, 90d, 1y) — numbers should update
 4. Verify the stats make sense: revenue total, user count, subscription breakdown by product, purchase sales
 
-#### Scenario 8: Verify activity logging
+#### Scenario 10: Verify activity logging
 
 1. Login as admin and perform several actions (create user, edit product, delete product, etc.)
 2. Click **Activity** in the sidebar
 3. Verify each action appears in the log with the correct action type, actor, and timestamp
 
-#### Scenario 9: Run the full unit test suite
+#### Scenario 11: Run the full unit test suite
 
 1. Open a terminal in the project root
 2. Run `pnpm test`
-3. All 156 tests should pass across 13 test files
+3. All 250 tests should pass across 21 test files
 4. If any test fails, check the output for the failing assertion and fix the issue before continuing
 
 ---
@@ -615,7 +654,7 @@ Users can also gain individual features by **purchasing products** or through an
 ```bash
 pnpm install          # Install everything
 pnpm setup:api        # Install + push schema + seed (first time)
-pnpm test             # Run 156 unit tests
+pnpm test             # Run 250 unit tests
 pnpm dev              # Start both apps (client:7000 + api:7001)
 pnpm build            # Production build (tests run first)
 ```

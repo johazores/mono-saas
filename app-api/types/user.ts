@@ -80,4 +80,8 @@ export type UserAuthSession = {
       endDate: Date | null;
     } | null;
   };
+  impersonation?: {
+    adminId: string;
+    adminName: string;
+  };
 };

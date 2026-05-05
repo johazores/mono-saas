@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useRef, type ReactNode } from "react";
 import useSWR from "swr";
 import { ClerkProvider, useAuth } from "@clerk/react";
 import { swrFetcher } from "@/lib/swr";
@@ -12,6 +12,7 @@ const AuthConfigContext = createContext<AuthConfigContextValue>({
   clerkPublishableKey: "",
   ready: false,
   getToken: async () => null,
+  signOut: async () => {},
 });
 
 export function useAuthConfig() {
@@ -19,27 +20,41 @@ export function useAuthConfig() {
 }
 
 /** Bridges Clerk's useAuth into the shared AuthConfigContext. */
-function ClerkTokenBridge({ children }: { children: ReactNode }) {
-  const { getToken, isLoaded } = useAuth();
-  const config = useContext(AuthConfigContext);
+function ClerkTokenBridge({
+  clerkPublishableKey,
+  children,
+}: {
+  clerkPublishableKey: string;
+  children: ReactNode;
+}) {
+  const { getToken, isLoaded, signOut } = useAuth();
 
-  // Register the token getter synchronously during render so it is
-  // available before any child effects (e.g. the layout's /me call).
-  // setTokenGetter just assigns a module-level variable — idempotent,
-  // no DOM mutation, safe to call during render.
   if (isLoaded) {
     setTokenGetter(() => getToken());
   }
 
   return (
     <AuthConfigContext.Provider
-      value={{ ...config, ready: isLoaded, getToken: () => getToken() }}
+      value={{
+        provider: "clerk",
+        clerkPublishableKey,
+        ready: isLoaded,
+        getToken: () => getToken(),
+        signOut: () => signOut(),
+      }}
     >
       {children}
     </AuthConfigContext.Provider>
   );
 }
 
+/**
+ * Renders children inside ClerkProvider when in Clerk mode, or directly
+ * with just the context provider when in credentials mode.
+ *
+ * Uses a ref to "commit" to Clerk mode once detected so the ClerkProvider
+ * never unmounts on subsequent renders.
+ */
 export function AuthConfigProvider({ children }: { children: ReactNode }) {
   const { data } = useSWR<PublicAuthConfig>("/api/settings/auth", swrFetcher, {
     revalidateOnFocus: false,
@@ -49,41 +64,40 @@ export function AuthConfigProvider({ children }: { children: ReactNode }) {
 
   const config = data ?? null;
 
-  if (!config) {
-    return null;
+  // Once we detect Clerk mode with a valid key, lock it in so the
+  // ClerkProvider never unmounts on subsequent re-renders.
+  const clerkKeyRef = useRef<string | null>(null);
+  if (config?.provider === "clerk" && config.clerkPublishableKey) {
+    clerkKeyRef.current = config.clerkPublishableKey;
   }
 
-  if (config.provider === "clerk" && config.clerkPublishableKey) {
+  // ── Clerk mode (with key) ──────────────────────────────────────────
+  // ClerkTokenBridge will set ready=true once Clerk has loaded.
+  if (clerkKeyRef.current) {
     return (
-      <AuthConfigContext.Provider
-        value={{
-          provider: "clerk",
-          clerkPublishableKey: config.clerkPublishableKey,
-          ready: false,
-          getToken: async () => null,
-        }}
+      <ClerkProvider
+        publishableKey={clerkKeyRef.current}
+        signInUrl="/user-login"
+        signUpUrl="/user-register"
       >
-        <ClerkProvider
-          publishableKey={config.clerkPublishableKey}
-          signInUrl="/user-login"
-          signUpUrl="/user-register"
-        >
-          <ClerkTokenBridge>{children}</ClerkTokenBridge>
-        </ClerkProvider>
-      </AuthConfigContext.Provider>
+        <ClerkTokenBridge clerkPublishableKey={clerkKeyRef.current}>
+          {children}
+        </ClerkTokenBridge>
+      </ClerkProvider>
     );
   }
 
-  // Clerk mode is set but publishable key is missing — show error instead
-  // of silently falling back to credential forms that the server will reject
-  if (config.provider === "clerk" && !config.clerkPublishableKey) {
+  // ── Still loading config ───────────────────────────────────────────
+  // Keep ready=false so pages show a loading state, not a form.
+  if (!config) {
     return (
       <AuthConfigContext.Provider
         value={{
-          provider: "clerk",
+          provider: "credentials",
           clerkPublishableKey: "",
-          ready: true,
+          ready: false,
           getToken: async () => null,
+          signOut: async () => {},
         }}
       >
         {children}
@@ -91,6 +105,25 @@ export function AuthConfigProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  // ── Clerk mode without key ─────────────────────────────────────────
+  // ready=true so pages can render the "missing key" warning.
+  if (config.provider === "clerk") {
+    return (
+      <AuthConfigContext.Provider
+        value={{
+          provider: "clerk",
+          clerkPublishableKey: "",
+          ready: true,
+          getToken: async () => null,
+          signOut: async () => {},
+        }}
+      >
+        {children}
+      </AuthConfigContext.Provider>
+    );
+  }
+
+  // ── Credentials mode ───────────────────────────────────────────────
   return (
     <AuthConfigContext.Provider
       value={{
@@ -98,6 +131,7 @@ export function AuthConfigProvider({ children }: { children: ReactNode }) {
         clerkPublishableKey: "",
         ready: true,
         getToken: async () => null,
+        signOut: async () => {},
       }}
     >
       {children}

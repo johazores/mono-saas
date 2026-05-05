@@ -26,6 +26,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   favicon: "",
   logo: "",
   logoDark: "",
+  authQuote: "",
   theme: {},
 };
 

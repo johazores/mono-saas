@@ -9,6 +9,7 @@ import { settingService } from "@/services/setting-service";
 import type { AccountStatus, UserAuthSession } from "@/types";
 
 const COOKIE_NAME = "user_session";
+const IMPERSONATION_COOKIE = "admin_impersonating";
 const SESSION_DAYS = 14;
 
 function hashToken(token: string) {
@@ -35,7 +36,7 @@ export async function createUserSession(userId: string, res: NextApiResponse) {
     data: { userId, tokenHash, expiresAt: sessionExpiry() },
   });
 
-  res.setHeader(
+  res.appendHeader(
     "Set-Cookie",
     `${COOKIE_NAME}=${token}; ${cookieOptions(SESSION_DAYS * 24 * 60 * 60)}`,
   );
@@ -51,20 +52,50 @@ export async function clearUserSession(
       where: { tokenHash: hashToken(token) },
     });
   }
-  res.setHeader("Set-Cookie", `${COOKIE_NAME}=; ${cookieOptions(0)}`);
+  // Clear both user session and impersonation cookies
+  res.appendHeader("Set-Cookie", `${COOKIE_NAME}=; ${cookieOptions(0)}`);
+  res.appendHeader(
+    "Set-Cookie",
+    `${IMPERSONATION_COOKIE}=; ${cookieOptions(0)}`,
+  );
 }
 
 export async function getUserSession(
   req: NextApiRequest,
 ): Promise<UserAuthSession | null> {
-  // Check auth provider config
-  const authConfig = await settingService.getAuthConfig();
+  // If admin is impersonating, always use credential-based session.
+  // Impersonation creates a user_session cookie regardless of auth provider.
+  const impersonation = getImpersonationInfo(req);
 
-  if (authConfig.provider === "clerk") {
-    return getClerkUserSession(req);
+  let session: UserAuthSession | null;
+  if (impersonation) {
+    session = await getCredentialUserSession(req);
+  } else {
+    const authConfig = await settingService.getAuthConfig();
+    if (authConfig.provider === "clerk") {
+      session = await getClerkUserSession(req);
+    } else {
+      session = await getCredentialUserSession(req);
+    }
   }
 
-  return getCredentialUserSession(req);
+  if (!session) return null;
+
+  // Attach impersonation info
+  if (impersonation) {
+    const admin = await prisma.admin.findUnique({
+      where: { id: impersonation.adminId },
+      select: { name: true },
+    });
+    if (admin) {
+      session.impersonation = {
+        adminId: impersonation.adminId,
+        adminName: admin.name,
+      };
+    }
+  }
+
+  return session;
 }
 
 async function getClerkUserSession(
@@ -214,4 +245,56 @@ export async function requireUser(
   }
 
   return session;
+}
+
+// --- Impersonation helpers ---
+
+function signImpersonationPayload(payload: string): string {
+  return crypto
+    .createHmac("sha256", getUserSessionSecret())
+    .update(payload)
+    .digest("hex");
+}
+
+export function setImpersonationCookie(
+  adminId: string,
+  userId: string,
+  res: NextApiResponse,
+) {
+  const payload = `${adminId}:${userId}`;
+  const signature = signImpersonationPayload(payload);
+  const value = `${payload}:${signature}`;
+  res.appendHeader(
+    "Set-Cookie",
+    `${IMPERSONATION_COOKIE}=${value}; ${cookieOptions(SESSION_DAYS * 24 * 60 * 60)}`,
+  );
+}
+
+export function clearImpersonationCookie(res: NextApiResponse) {
+  res.appendHeader(
+    "Set-Cookie",
+    `${IMPERSONATION_COOKIE}=; ${cookieOptions(0)}`,
+  );
+}
+
+export function getImpersonationInfo(
+  req: NextApiRequest,
+): { adminId: string; userId: string } | null {
+  const raw = req.cookies[IMPERSONATION_COOKIE];
+  if (!raw) return null;
+
+  const parts = raw.split(":");
+  if (parts.length !== 3) return null;
+
+  const [adminId, userId, signature] = parts;
+  const expectedSig = signImpersonationPayload(`${adminId}:${userId}`);
+
+  if (
+    signature.length !== expectedSig.length ||
+    !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))
+  ) {
+    return null;
+  }
+
+  return { adminId, userId };
 }

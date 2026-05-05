@@ -27,6 +27,7 @@ const ALLOWED_KEYS = new Set([
   "site.favicon",
   "site.logo",
   "site.logoDark",
+  "site.authQuote",
   // Theme tokens
   "theme.primary",
   "theme.primaryHover",
@@ -186,6 +187,7 @@ export const settingService = {
       favicon: (map.get("site.favicon") as string) ?? "",
       logo: (map.get("site.logo") as string) ?? "",
       logoDark: (map.get("site.logoDark") as string) ?? "",
+      authQuote: (map.get("site.authQuote") as string) ?? "",
       theme,
     };
   },

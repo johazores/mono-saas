@@ -10,6 +10,10 @@ export type AppUser = {
     slug: string;
     endDate: string | null;
   } | null;
+  impersonation?: {
+    adminId: string;
+    adminName: string;
+  };
 };
 
 export type UpdateUserProfileInput = {

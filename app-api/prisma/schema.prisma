@@ -61,6 +61,21 @@ model UserSession {
   updatedAt DateTime @updatedAt
 }
 
+model UserInvitation {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  env       String   @default("dev")
+  email     String
+  name      String?
+  tokenHash String   @unique
+  status    String   @default("pending") // pending | accepted | expired
+  expiresAt DateTime
+  invitedBy String   @db.ObjectId
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([env, email])
+}
+
 model AdminSession {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   adminId   String   @db.ObjectId

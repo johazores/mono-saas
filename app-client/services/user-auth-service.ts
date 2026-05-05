@@ -24,4 +24,7 @@ export const userAuthService = {
   async updateProfile(input: UpdateUserProfileInput) {
     return apiPut<AppUser>("/api/users/auth/profile", input);
   },
+  async stopImpersonation() {
+    return apiPost<{ redirectUrl: string }>("/api/users/auth/stop-impersonation");
+  },
 };
