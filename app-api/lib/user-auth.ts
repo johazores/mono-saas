@@ -105,7 +105,7 @@ async function getClerkUserSession(
   if (!clerkPayload?.email) return null;
 
   const email = clerkPayload.email.toLowerCase().trim();
-  const env = getAppEnv();
+  const env = await getAppEnv();
 
   // Look up by clerkId first, then fall back to email
   let user = clerkPayload.sub

@@ -152,7 +152,7 @@ pnpm test
 | ---------------------------------------------- | ----- | ------------------------------------------------------ |
 | `tests/lib/password.test.ts`                   | 8     | PBKDF2 hashing, salt uniqueness, password verification |
 | `tests/lib/rate-limiter.test.ts`               | 6     | Sliding window rate limiter (allow/block/remaining)    |
-| `tests/lib/env.test.ts`                        | 5     | APP_ENV validation, defaults, invalid values           |
+| `tests/lib/env.test.ts`                        | 9     | APP_ENV async resolution, DB read, fallback, sync API  |
 | `tests/lib/feature-registry.test.ts`           | 12    | Feature cache, definitions, enabled checks             |
 | `tests/lib/payment/stripe-provider.test.ts`    | 3     | Stripe checkout session creation, session verification |
 | `tests/services/admin-service.test.ts`         | 22    | Admin CRUD, login, validation, duplicate detection     |

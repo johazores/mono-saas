@@ -31,10 +31,10 @@ export const userRepository = {
       select: safeSelect,
     });
   },
-  findByEmailWithPassword(email: string) {
+  async findByEmailWithPassword(email: string) {
     return prisma.user.findUnique({
       where: {
-        env_email: { env: getAppEnv(), email: email.toLowerCase().trim() },
+        env_email: { env: await getAppEnv(), email: email.toLowerCase().trim() },
       },
     });
   },

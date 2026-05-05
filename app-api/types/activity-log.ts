@@ -60,7 +60,8 @@ export type ActivityAction =
   | "user.impersonate_stop"
   | "user.invite"
   | "user.invite_accept"
-  | "user.invite_revoke";
+  | "user.invite_revoke"
+  | "system-config.update";
 
 export type ActivityActor = "admin" | "user" | "system";
 

@@ -81,6 +81,7 @@ export type {
 export type { ApiResponse, ListResponse } from "./response";
 export type {
   AppEnv,
+  SystemConfigRecord,
   AuthProvider,
   AuthConfig,
   PublicAuthConfig,

@@ -3,7 +3,7 @@ import { getAppEnv } from "@/lib/env";
 import type { InvitationStatus } from "@/types";
 
 export const invitationRepository = {
-  create(data: {
+  async create(data: {
     email: string;
     name?: string;
     tokenHash: string;
@@ -12,7 +12,7 @@ export const invitationRepository = {
   }) {
     return prisma.userInvitation.create({
       data: {
-        env: getAppEnv(),
+        env: await getAppEnv(),
         email: data.email.toLowerCase().trim(),
         name: data.name || null,
         tokenHash: data.tokenHash,
@@ -28,9 +28,10 @@ export const invitationRepository = {
     });
   },
 
-  list() {
+  async list() {
+    const env = await getAppEnv();
     return prisma.userInvitation.findMany({
-      where: { env: getAppEnv() },
+      where: { env },
       orderBy: { createdAt: "desc" },
     });
   },

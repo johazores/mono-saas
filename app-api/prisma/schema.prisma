@@ -364,3 +364,10 @@ model BlockTemplate {
 
   @@unique([env, slug])
 }
+
+model SystemConfig {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}

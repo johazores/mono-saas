@@ -2,6 +2,11 @@ export type { AppEnv } from "@/lib/env";
 
 export type AuthProvider = "credentials" | "clerk";
 
+export type SystemConfigRecord = {
+  key: string;
+  value: unknown;
+};
+
 export type AuthConfig = {
   provider: AuthProvider;
   clerkPublishableKey: string;

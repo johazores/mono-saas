@@ -1,11 +1,21 @@
 import { prisma } from "../lib/prisma";
+import { basePrisma } from "../lib/base-prisma";
 import { hashPassword } from "../lib/password";
-import { getAppEnv } from "../lib/env";
+import { getAppEnvSync } from "../lib/env";
 import { getUserSessionSecret } from "../lib/secure-credentials";
 
 async function main() {
-  const env = getAppEnv();
+  const env = getAppEnvSync();
   console.log(`Seeding for environment: ${env}\n`);
+
+  // Seed SystemConfig default (global, not env-scoped)
+  await basePrisma.systemConfig.upsert({
+    where: { key: "APP_ENV" },
+    update: {},
+    create: { key: "APP_ENV", value: env },
+  });
+  console.log(`SystemConfig APP_ENV seeded: ${env}`);
+
   // Seed products (includes subscription plans and one-time purchases)
   const products = [
     {

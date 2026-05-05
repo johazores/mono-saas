@@ -7,6 +7,8 @@ export type PublicAuthConfig = {
 
 export type SettingItem = { key: string; value: unknown };
 
+export type SystemConfigItem = { key: string; value: unknown };
+
 export type PaymentMode = "test" | "live";
 
 export type AuthSettings = {

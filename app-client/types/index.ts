@@ -60,6 +60,7 @@ export type {
   AuthProvider,
   PublicAuthConfig,
   SettingItem,
+  SystemConfigItem,
   PaymentMode,
   AuthSettings,
   PaymentSettings,

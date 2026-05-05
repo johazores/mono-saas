@@ -19,9 +19,9 @@ export const featureRepository = {
     return prisma.feature.findUnique({ where: { id } });
   },
 
-  findByKey(key: string) {
+  async findByKey(key: string) {
     return prisma.feature.findUnique({
-      where: { env_key: { env: getAppEnv(), key } },
+      where: { env_key: { env: await getAppEnv(), key } },
     });
   },
 

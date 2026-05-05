@@ -27,14 +27,19 @@ Runs on port **7001**.
 
 ## Environment Scoping
 
-All data collections (except `Admin` and `AdminSession`) carry an `env` field
-that isolates records by environment. The API reads `APP_ENV` from the
-environment and automatically injects `env` into every Prisma query via a
-client extension — no manual filtering is required in repositories or services.
+All data collections (except `Admin`, `AdminSession`, and `SystemConfig`) carry an `env` field
+that isolates records by environment. The API reads `APP_ENV` from the `SystemConfig`
+database table at runtime (falling back to `process.env.APP_ENV`) and automatically
+injects `env` into every Prisma query via a client extension — no manual filtering
+is required in repositories or services.
+
+Admins can switch the active environment at runtime via **Settings > Environment**
+in the admin panel. Changes take effect immediately without redeployment.
 
 - **Scoped models**: User, UserSession, Product, Purchase, Membership, Feature, ActivityLog, SiteSetting
-- **Global models**: Admin, AdminSession (admins manage all environments)
+- **Global models**: Admin, AdminSession, SystemConfig (admins manage all environments)
 - **SiteSettings**: Per-environment (dev can use credentials auth while production uses Clerk)
+- **SystemConfig**: Global key-value store for runtime system settings (e.g., APP_ENV)
 - **Seed script**: Respects `APP_ENV` — run `APP_ENV=production pnpm db:seed` to seed production data independently
 
 ## Structure

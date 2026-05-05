@@ -1,5 +1,7 @@
-import { PrismaClient } from "@prisma/client";
 import { getAppEnv } from "./env";
+import { basePrisma } from "./base-prisma";
+
+export { basePrisma };
 
 /** Models that carry an `env` field for environment scoping. */
 const ENV_SCOPED_MODELS = new Set([
@@ -27,17 +29,13 @@ function isEnvScoped(model: string | undefined): boolean {
   return !!model && ENV_SCOPED_MODELS.has(model);
 }
 
-const basePrisma = new PrismaClient({
-  log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
-});
-
 function createExtendedClient() {
   return basePrisma.$extends({
     query: {
-      $allOperations({ model, operation, args, query }) {
+      async $allOperations({ model, operation, args, query }) {
         if (!isEnvScoped(model)) return query(args);
 
-        const env = getAppEnv();
+        const env = await getAppEnv();
 
         // Ensure a where clause exists for read/update/delete operations that
         // support filtering (findMany, updateMany, deleteMany, count, etc.)

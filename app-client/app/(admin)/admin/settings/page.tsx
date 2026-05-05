@@ -2,7 +2,7 @@
 
 import { useState, useEffect, type FormEvent } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { adminSettingService } from "@/services/admin-setting-service";
+import { adminSettingService, adminSystemConfigService } from "@/services/admin-setting-service";
 import { PageHeader, Notice, Button, Tabs, FormField, FormSelect } from "@/components/ui";
 import type {
   AuthProvider,
@@ -11,9 +11,10 @@ import type {
   PaymentSettings,
   ThemeTokens,
 } from "@/types";
-import { Shield, CreditCard, Globe, Palette } from "lucide-react";
+import { Shield, CreditCard, Globe, Palette, Server } from "lucide-react";
 
 const TABS = [
+  { id: "environment", label: "Environment", icon: <Server size={16} /> },
   { id: "auth", label: "Authentication", icon: <Shield size={16} /> },
   { id: "payment", label: "Payment", icon: <CreditCard size={16} /> },
   { id: "site", label: "Site Identity", icon: <Globe size={16} /> },
@@ -87,6 +88,14 @@ export default function SettingsPage() {
   const [siteLogoDark, setSiteLogoDark] = useState("");
   const [theme, setTheme] = useState<ThemeTokens>({ ...DEFAULT_THEME });
 
+  // Environment tab state
+  const [currentEnv, setCurrentEnv] = useState<"dev" | "production">("dev");
+  const [selectedEnv, setSelectedEnv] = useState<"dev" | "production">("dev");
+  const [envConfirmText, setEnvConfirmText] = useState("");
+  const [savingEnv, setSavingEnv] = useState(false);
+  const [envMessage, setEnvMessage] = useState("");
+  const [showEnvConfirm, setShowEnvConfirm] = useState(false);
+
   function handleTabChange(tabId: string) {
     setActiveTab(tabId);
     router.replace(`/admin/settings?tab=${tabId}`, { scroll: false });
@@ -134,7 +143,44 @@ export default function SettingsPage() {
         }
       })
       .finally(() => setLoading(false));
+
+    // Load system config (environment)
+    adminSystemConfigService.get("APP_ENV").then((res) => {
+      if (res.ok && res.data) {
+        const val = (res.data.value as "dev" | "production") || "dev";
+        setCurrentEnv(val);
+        setSelectedEnv(val);
+      }
+    });
   }, []);
+
+  async function handleEnvSwitch() {
+    if (selectedEnv === currentEnv) {
+      setEnvMessage("Environment is already set to " + currentEnv + ".");
+      return;
+    }
+    if (envConfirmText !== selectedEnv) {
+      setEnvMessage(`Please type "${selectedEnv}" to confirm the switch.`);
+      return;
+    }
+    setSavingEnv(true);
+    setEnvMessage("");
+    try {
+      const res = await adminSystemConfigService.update("APP_ENV", selectedEnv);
+      if (res.ok) {
+        setCurrentEnv(selectedEnv);
+        setEnvMessage(`Environment switched to "${selectedEnv}" successfully.`);
+        setShowEnvConfirm(false);
+        setEnvConfirmText("");
+      }
+    } catch (err) {
+      setEnvMessage(
+        err instanceof Error ? err.message : "Failed to switch environment.",
+      );
+    } finally {
+      setSavingEnv(false);
+    }
+  }
 
   async function handleAuthSubmit(e: FormEvent) {
     e.preventDefault();
@@ -242,10 +288,97 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Settings"
-        description="Configure site identity, theme, authentication, and payment."
+        description="Configure environment, authentication, payment, site identity, and theme."
       />
 
       <Tabs tabs={TABS} activeTab={activeTab} onChange={handleTabChange}>
+        {activeTab === "environment" && (
+          <section className="rounded-xl border border-border bg-background p-6">
+            <div className="max-w-lg space-y-5">
+              <div className="rounded-lg border border-warning/30 bg-warning/5 p-4">
+                <p className="text-sm font-medium text-warning">
+                  Warning: Switching the environment changes the data partition for ALL API traffic.
+                </p>
+                <p className="mt-1 text-xs text-muted">
+                  Dev and production data are independent. Switching does not delete data — it changes which dataset is active.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-foreground">Current environment:</span>
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${currentEnv === "production" ? "bg-error/10 text-error" : "bg-success/10 text-success"}`}>
+                  {currentEnv}
+                </span>
+              </div>
+
+              {envMessage && (
+                <Notice
+                  message={envMessage}
+                  variant={envMessage.includes("success") ? "success" : "error"}
+                />
+              )}
+
+              <FormSelect
+                label="Switch to environment"
+                value={selectedEnv}
+                onChange={(e) => {
+                  setSelectedEnv(e.target.value as "dev" | "production");
+                  setShowEnvConfirm(false);
+                  setEnvConfirmText("");
+                  setEnvMessage("");
+                }}
+                options={[
+                  { value: "dev", label: "dev" },
+                  { value: "production", label: "production" },
+                ]}
+              />
+
+              {selectedEnv !== currentEnv && !showEnvConfirm && (
+                <Button
+                  onClick={() => setShowEnvConfirm(true)}
+                  variant="secondary"
+                >
+                  Switch Environment
+                </Button>
+              )}
+
+              {showEnvConfirm && selectedEnv !== currentEnv && (
+                <div className="space-y-3 rounded-lg border border-error/30 bg-error/5 p-4">
+                  <p className="text-sm text-foreground">
+                    To confirm, type <strong>{selectedEnv}</strong> below:
+                  </p>
+                  <input
+                    type="text"
+                    value={envConfirmText}
+                    onChange={(e) => setEnvConfirmText(e.target.value)}
+                    placeholder={`Type "${selectedEnv}" to confirm`}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none"
+                  />
+                  <div className="flex gap-3">
+                    <Button
+                      onClick={handleEnvSwitch}
+                      loading={savingEnv}
+                      disabled={envConfirmText !== selectedEnv}
+                    >
+                      Confirm Switch
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setShowEnvConfirm(false);
+                        setEnvConfirmText("");
+                        setEnvMessage("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
         {activeTab === "auth" && (
           <section className="rounded-xl border border-border bg-background p-6">
             <form onSubmit={handleAuthSubmit} className="max-w-lg space-y-5">

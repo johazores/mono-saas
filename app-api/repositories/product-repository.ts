@@ -20,9 +20,9 @@ export const productRepository = {
     return prisma.product.findUnique({ where: { id } });
   },
 
-  findBySlug(slug: string) {
+  async findBySlug(slug: string) {
     return prisma.product.findUnique({
-      where: { env_slug: { env: getAppEnv(), slug } },
+      where: { env_slug: { env: await getAppEnv(), slug } },
     });
   },
 

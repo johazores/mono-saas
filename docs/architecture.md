@@ -20,6 +20,8 @@ are global).
 ### How It Works
 
 - **`APP_ENV`** environment variable (`"dev"` | `"production"`) determines the active environment. Defaults to `"dev"`.
+- At runtime, `APP_ENV` is resolved dynamically from the `SystemConfig` database table (global, not env-scoped). Falls back to `process.env.APP_ENV` if the DB value is unavailable.
+- An admin can switch environments at runtime via the Settings > Environment tab without redeployment.
 - A **Prisma client extension** (`lib/prisma.ts`) automatically injects `env` into every query:
   - Read operations (`findMany`, `findFirst`, `findUnique`, `count`, etc.) get `where.env = APP_ENV`
   - Create operations get `data.env = APP_ENV`
@@ -31,7 +33,7 @@ are global).
 | Scope      | Models                                                                                                                                                                                                         | Behavior                            |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
 | **Env**    | User, UserSession, Product, ProductPrice, Purchase, PurchaseFile, Membership, Feature, ActivityLog, SiteSetting, CheckoutSession, Page, ContentType, ContentItem, Taxonomy, TaxonomyTerm, Media, BlockTemplate | Filtered by `APP_ENV` automatically |
-| **Global** | Admin, AdminSession                                                                                                                                                                                            | Shared across all environments      |
+| **Global** | Admin, AdminSession, SystemConfig                                                                                                                                                                   | Shared across all environments      |
 
 ### Per-Environment Configuration
 
@@ -139,6 +141,7 @@ app-api/
 - **Collections**:
   - `Admin` — CMS admin accounts (name, email, passwordHash, role, status, failedLoginAttempts, lockedUntil, lastLoginAt)
   - `AdminSession` — Admin auth sessions (adminId -> Admin, tokenHash, expiresAt)
+  - `SystemConfig` — Global key-value system configuration (key unique, JSON value). Stores runtime settings like APP_ENV that are shared across all environments. Not env-scoped.
   - `User` — Application users (env, name, email, passwordHash, clerkId, stripeCustomerId, status, parentId -> User, ancestors, failedLoginAttempts, lockedUntil, lastLoginAt, phone, address as JSON) `@@unique([env, email])` `@@index([env, clerkId])`
   - `UserSession` — User auth sessions (env, userId -> User, tokenHash, expiresAt)
   - `UserInvitation` — Invitation tokens for user registration (env, email, name, tokenHash unique, status pending|accepted|expired, expiresAt, invitedBy as admin ObjectId) `@@index([env, email])`
