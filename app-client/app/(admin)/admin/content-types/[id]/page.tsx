@@ -359,6 +359,10 @@ export default function ContentTypeEditorPage() {
         setListDisplay({
           ...defaultListDisplay,
           ...((ct.listDisplay as Partial<ListDisplay>) || {}),
+          subtitleField:
+            (ct.listDisplay as Partial<ListDisplay>)?.subtitleField ?? "",
+          imageField:
+            (ct.listDisplay as Partial<ListDisplay>)?.imageField ?? "",
         });
         setPublicSettings({
           ...defaultPublicSettings,
@@ -666,7 +670,7 @@ export default function ContentTypeEditorPage() {
             </span>
             <input
               className={inputClass}
-              value={listDisplay.subtitleField}
+              value={listDisplay.subtitleField ?? ""}
               onChange={(e) =>
                 setListDisplay({
                   ...listDisplay,
@@ -682,7 +686,7 @@ export default function ContentTypeEditorPage() {
             </span>
             <input
               className={inputClass}
-              value={listDisplay.imageField}
+              value={listDisplay.imageField ?? ""}
               onChange={(e) =>
                 setListDisplay({ ...listDisplay, imageField: e.target.value })
               }
