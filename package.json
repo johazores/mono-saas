@@ -22,6 +22,7 @@
     "test:watch": "npx pnpm --prefix app-api test:watch",
     "prisma:push": "npx pnpm --prefix app-api prisma:push",
     "db:seed": "npx pnpm --prefix app-api db:seed",
+    "db:seed:admin": "npx pnpm --prefix app-api db:seed:admin",
     "setup:api": "npx pnpm --prefix app-api setup"
   },
   "devDependencies": {

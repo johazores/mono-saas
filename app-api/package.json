@@ -13,6 +13,7 @@
     "postinstall": "npx prisma generate",
     "prisma:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:admin": "tsx prisma/seed-admin.ts",
     "setup": "pnpm install && pnpm run prisma:push && pnpm run db:seed"
   },
   "dependencies": {
