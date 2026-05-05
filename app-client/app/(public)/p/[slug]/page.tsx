@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { BlockRenderer } from "@/components/blocks/block-renderer";
 import type { CmsPage, BlockTemplate } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 async function getPage(slug: string): Promise<CmsPage | null> {
   // Special slug for homepage

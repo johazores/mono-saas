@@ -24,6 +24,8 @@ const TABS = [
 const THEME_FIELDS: { key: keyof ThemeTokens; label: string }[] = [
   { key: "primary", label: "Primary" },
   { key: "primaryHover", label: "Primary Hover" },
+  { key: "secondary", label: "Secondary" },
+  { key: "secondaryHover", label: "Secondary Hover" },
   { key: "accent", label: "Accent" },
   { key: "background", label: "Background" },
   { key: "surface", label: "Surface" },
@@ -36,9 +38,17 @@ const THEME_FIELDS: { key: keyof ThemeTokens; label: string }[] = [
   { key: "info", label: "Info" },
 ];
 
+const GRADIENT_FIELDS: { key: keyof ThemeTokens; label: string }[] = [
+  { key: "primaryGradient", label: "Primary Gradient" },
+  { key: "secondaryGradient", label: "Secondary Gradient" },
+  { key: "accentGradient", label: "Accent Gradient" },
+];
+
 const DEFAULT_THEME: ThemeTokens = {
   primary: "#2563eb",
   primaryHover: "#1d4ed8",
+  secondary: "#4b5563",
+  secondaryHover: "#374151",
   accent: "#7c3aed",
   background: "#ffffff",
   surface: "#f9fafb",
@@ -267,7 +277,7 @@ export default function SettingsPage() {
     setSavingTheme(true);
     setThemeMessage("");
     try {
-      for (const { key } of THEME_FIELDS) {
+      for (const { key } of [...THEME_FIELDS, ...GRADIENT_FIELDS]) {
         await adminSettingService.update(`theme.${key}`, theme[key] ?? "");
       }
       setThemeMessage("Theme saved successfully. Reload to see changes.");
@@ -743,6 +753,37 @@ export default function SettingsPage() {
                         {label}
                       </p>
                       <p className="text-xs text-muted">{theme[key]}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-foreground">
+                  Gradients{" "}
+                  <span className="font-normal text-muted">
+                    (optional — use CSS gradient syntax, e.g. linear-gradient(135deg, #667eea, #764ba2))
+                  </span>
+                </p>
+                {GRADIENT_FIELDS.map(({ key, label }) => (
+                  <div key={key} className="flex items-center gap-3">
+                    <div
+                      className="h-9 w-9 shrink-0 rounded-lg border border-border"
+                      style={{ background: theme[key] || "transparent" }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <label className="mb-1 block text-xs font-medium text-foreground">
+                        {label}
+                      </label>
+                      <input
+                        type="text"
+                        value={theme[key] || ""}
+                        onChange={(e) =>
+                          setTheme((t) => ({ ...t, [key]: e.target.value || undefined }))
+                        }
+                        placeholder="none"
+                        className="w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground placeholder:text-muted"
+                      />
                     </div>
                   </div>
                 ))}

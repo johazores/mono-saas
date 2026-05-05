@@ -12,7 +12,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * so they always take priority.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // Known route prefixes that should never be treated as CMS page slugs
 const STATIC_PREFIXES = [

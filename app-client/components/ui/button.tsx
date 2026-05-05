@@ -4,7 +4,7 @@ const variantStyles: Record<ButtonVariant, string> = {
   primary:
     "bg-primary text-white shadow-sm hover:bg-primary-hover active:scale-[0.98] disabled:opacity-50",
   secondary:
-    "border border-border text-foreground shadow-sm hover:bg-surface active:scale-[0.98]",
+    "border border-secondary/30 text-foreground shadow-sm hover:bg-secondary/5 active:scale-[0.98] disabled:opacity-50",
   danger:
     "border border-error/20 text-error shadow-sm hover:bg-error/5 active:scale-[0.98]",
   ghost:

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { mediaUrl } from "@/lib/media-url";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 type FlatItem = Record<string, unknown> & {
   id: string;

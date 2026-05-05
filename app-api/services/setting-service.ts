@@ -31,7 +31,12 @@ const ALLOWED_KEYS = new Set([
   // Theme tokens
   "theme.primary",
   "theme.primaryHover",
+  "theme.primaryGradient",
+  "theme.secondary",
+  "theme.secondaryHover",
+  "theme.secondaryGradient",
   "theme.accent",
+  "theme.accentGradient",
   "theme.background",
   "theme.surface",
   "theme.border",
@@ -88,7 +93,8 @@ export const settingService = {
     }
 
     if (key.startsWith("theme.") && typeof value === "string" && value !== "") {
-      if (!/^#[0-9a-fA-F]{6}$/.test(value)) {
+      const isGradient = key.endsWith("Gradient");
+      if (!isGradient && !/^#[0-9a-fA-F]{6}$/.test(value)) {
         throw new Error(
           `Invalid color value for ${key}. Must be a hex color (e.g. #2563eb).`,
         );

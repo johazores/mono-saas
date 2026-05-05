@@ -3,7 +3,7 @@ import { mediaUrl } from "@/lib/media-url";
 import { DefaultContentRenderer } from "@/components/content/default-content-renderer";
 import type { ContentFieldDefinition } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 type FlatItem = Record<string, unknown> & {
   id: string;

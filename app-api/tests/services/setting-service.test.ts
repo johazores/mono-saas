@@ -270,3 +270,41 @@ describe("settingService.getPublicPaymentConfig", () => {
     expect(config).not.toHaveProperty("secretKey");
   });
 });
+
+describe("settingService.set theme", () => {
+  it("accepts valid hex color for theme tokens", async () => {
+    repo.set.mockResolvedValue({} as never);
+    await settingService.set("theme.primary", "#ff5500");
+    expect(repo.set).toHaveBeenCalledWith("theme.primary", "#ff5500");
+  });
+
+  it("rejects invalid hex color for non-gradient theme tokens", async () => {
+    await expect(
+      settingService.set("theme.secondary", "not-a-color"),
+    ).rejects.toThrow("Invalid color value");
+  });
+
+  it("accepts valid CSS gradient for gradient tokens", async () => {
+    repo.set.mockResolvedValue({} as never);
+    await settingService.set(
+      "theme.primaryGradient",
+      "linear-gradient(135deg, #667eea, #764ba2)",
+    );
+    expect(repo.set).toHaveBeenCalledWith(
+      "theme.primaryGradient",
+      "linear-gradient(135deg, #667eea, #764ba2)",
+    );
+  });
+
+  it("accepts empty string to clear a theme token", async () => {
+    repo.set.mockResolvedValue({} as never);
+    await settingService.set("theme.accentGradient", "");
+    expect(repo.set).toHaveBeenCalledWith("theme.accentGradient", "");
+  });
+
+  it("rejects unknown theme keys", async () => {
+    await expect(
+      settingService.set("theme.unknown", "#ffffff"),
+    ).rejects.toThrow("Unknown setting key");
+  });
+});

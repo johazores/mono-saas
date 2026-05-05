@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invitationService } from "@/services/invitation-service";
 import type { Invitation } from "@/types";
 import { X } from "lucide-react";
+import { StatusBadge } from "@/components/ui/status-badge";
 
 export function InvitationModal({ onClose }: { onClose: () => void }) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -70,20 +71,13 @@ export function InvitationModal({ onClose }: { onClose: () => void }) {
   }
 
   function statusBadge(status: string) {
-    const colors: Record<string, string> = {
-      pending:
-        "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200",
-      accepted:
-        "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200",
-      expired:
-        "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+    const variantMap: Record<string, "warning" | "success" | "muted"> = {
+      pending: "warning",
+      accepted: "success",
+      expired: "muted",
     };
     return (
-      <span
-        className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${colors[status] || ""}`}
-      >
-        {status}
-      </span>
+      <StatusBadge status={status} variant={variantMap[status] || "muted"} />
     );
   }
 
@@ -140,17 +134,17 @@ export function InvitationModal({ onClose }: { onClose: () => void }) {
             <button
               type="submit"
               disabled={loading}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
             >
               {loading ? "Sending..." : "Send Invitation"}
             </button>
           </form>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-error">{error}</p>}
 
           {inviteLink && (
-            <div className="rounded-md border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
-              <p className="mb-2 text-sm font-medium text-green-800 dark:text-green-200">
+            <div className="rounded-md border border-success/20 bg-success/5 p-4">
+              <p className="mb-2 text-sm font-medium text-success">
                 Invitation created! Share this link with the user:
               </p>
               <div className="flex items-center gap-2">
@@ -162,7 +156,7 @@ export function InvitationModal({ onClose }: { onClose: () => void }) {
                 />
                 <button
                   onClick={() => navigator.clipboard.writeText(inviteLink)}
-                  className="rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700"
+                  className="rounded bg-success px-3 py-1.5 text-xs font-medium text-white hover:bg-success/90"
                 >
                   Copy
                 </button>
@@ -171,8 +165,8 @@ export function InvitationModal({ onClose }: { onClose: () => void }) {
           )}
 
           {clerkSuccess && (
-            <div className="rounded-md border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
-              <p className="text-sm font-medium text-green-800 dark:text-green-200">
+            <div className="rounded-md border border-success/20 bg-success/5 p-4">
+              <p className="text-sm font-medium text-success">
                 Invitation sent! Clerk will deliver the email to the user automatically.
               </p>
             </div>
@@ -213,7 +207,7 @@ export function InvitationModal({ onClose }: { onClose: () => void }) {
                       {inv.status === "pending" && (
                         <button
                           onClick={() => handleRevoke(inv.id)}
-                          className="text-xs text-red-600 hover:underline"
+                          className="text-xs text-error hover:underline"
                         >
                           Revoke
                         </button>

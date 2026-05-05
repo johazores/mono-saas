@@ -355,6 +355,8 @@ async function main() {
     // Theme tokens (defaults match Tailwind blue-600 palette)
     { key: "theme.primary", value: "#2563eb" },
     { key: "theme.primaryHover", value: "#1d4ed8" },
+    { key: "theme.secondary", value: "#4b5563" },
+    { key: "theme.secondaryHover", value: "#374151" },
     { key: "theme.accent", value: "#7c3aed" },
     { key: "theme.background", value: "#ffffff" },
     { key: "theme.surface", value: "#f9fafb" },

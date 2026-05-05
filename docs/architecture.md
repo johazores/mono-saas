@@ -247,7 +247,7 @@ app-client/
 
 ### Key Patterns
 
-- **Design tokens via CSS custom properties**: Theme colors defined as `--theme-*` vars in `globals.css`, mapped to Tailwind utilities via `@theme` directive, and overridden at runtime by `SiteConfigProvider`
+- **Design tokens via CSS custom properties**: Theme colors defined as `--theme-*` vars in `globals.css`, mapped to Tailwind utilities via `@theme` directive, and overridden at runtime by `SiteConfigProvider`. Gradient tokens (`primaryGradient`, `secondaryGradient`, `accentGradient`) use CSS gradient syntax and are exposed as `.bg-gradient-primary` etc. utility classes that fall back to the solid color when no gradient is configured
 - **Tailwind-only styling**: All styling via Tailwind utility classes co-located in JSX, plus design token CSS vars for theming
 - **UI primitives**: Reusable `Button`, `Modal`, `Notice`, `StatusBadge`, `PageHeader`, `FormField`, `FormSection`, `FormSelect`, `FormTextarea`, `Tabs`, `RichTextEditor`, `EmptyState`, `StatCard`, `DashboardCard` components in `components/ui/`
 - **Admin layout shell**: `AdminShell` provides collapsible sidebar navigation with icons (Lucide), mobile hamburger menu, user avatar, wrapping admin pages. Collapse state persisted to localStorage

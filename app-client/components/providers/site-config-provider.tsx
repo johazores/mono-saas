@@ -8,7 +8,12 @@ import type { SiteConfig, ThemeTokens } from "@/types";
 const TOKEN_TO_VAR: Record<keyof ThemeTokens, string> = {
   primary: "--theme-primary",
   primaryHover: "--theme-primary-hover",
+  primaryGradient: "--theme-primary-gradient",
+  secondary: "--theme-secondary",
+  secondaryHover: "--theme-secondary-hover",
+  secondaryGradient: "--theme-secondary-gradient",
   accent: "--theme-accent",
+  accentGradient: "--theme-accent-gradient",
   background: "--theme-background",
   surface: "--theme-surface",
   border: "--theme-border",

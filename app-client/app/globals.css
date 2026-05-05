@@ -8,6 +8,8 @@
 :root {
   --theme-primary: #2563eb;
   --theme-primary-hover: #1d4ed8;
+  --theme-secondary: #4b5563;
+  --theme-secondary-hover: #374151;
   --theme-accent: #7c3aed;
   --theme-background: #ffffff;
   --theme-surface: #f9fafb;
@@ -28,6 +30,8 @@
 @theme {
   --color-primary: var(--theme-primary);
   --color-primary-hover: var(--theme-primary-hover);
+  --color-secondary: var(--theme-secondary);
+  --color-secondary-hover: var(--theme-secondary-hover);
   --color-accent: var(--theme-accent);
   --color-background: var(--theme-background);
   --color-surface: var(--theme-surface);
@@ -38,6 +42,23 @@
   --color-error: var(--theme-error);
   --color-warning: var(--theme-warning);
   --color-info: var(--theme-info);
+}
+
+/* ------------------------------------------------------------------ */
+/* Gradient utilities — use `bg-gradient-primary` etc. on any element. */
+/* Falls back to the solid color when no gradient is configured.       */
+/* ------------------------------------------------------------------ */
+
+.bg-gradient-primary {
+  background: var(--theme-primary-gradient, var(--theme-primary));
+}
+
+.bg-gradient-secondary {
+  background: var(--theme-secondary-gradient, var(--theme-secondary));
+}
+
+.bg-gradient-accent {
+  background: var(--theme-accent-gradient, var(--theme-accent));
 }
 
 /* ------------------------------------------------------------------ */

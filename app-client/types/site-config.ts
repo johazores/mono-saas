@@ -1,7 +1,12 @@
 export type ThemeTokens = {
   primary?: string;
   primaryHover?: string;
+  primaryGradient?: string;
+  secondary?: string;
+  secondaryHover?: string;
+  secondaryGradient?: string;
   accent?: string;
+  accentGradient?: string;
   background?: string;
   surface?: string;
   border?: string;

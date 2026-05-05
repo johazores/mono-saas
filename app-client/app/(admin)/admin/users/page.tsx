@@ -4,9 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { ResourceManager } from "@/components/admin";
 import { InvitationModal } from "@/components/admin/invitation-modal";
+import { Button } from "@/components/ui/button";
 import type { ResourceField, ResourceItem } from "@/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:7001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 const userFields: ResourceField[] = [
   { name: "name", label: "Name", type: "text" },
@@ -63,28 +64,27 @@ export default function UsersPage() {
         getSubtitle={(item) => `${item.email}`}
         emptyItem={emptyUser}
         headerAction={
-          <button
+          <Button
             onClick={() => setShowInvitations(true)}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
           >
             Invite User
-          </button>
+          </Button>
         }
         renderItemActions={(item) => (
           <div className="flex items-center gap-2">
             {item.status === "active" && (
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => handleImpersonate(item)}
-                className="text-xs text-amber-600 hover:underline"
               >
                 Impersonate
-              </button>
+              </Button>
             )}
-            <Link
-              href={`/admin/users/${item.id}/activity`}
-              className="text-xs text-primary hover:underline"
-            >
-              Activity
+            <Link href={`/admin/users/${item.id}/activity`}>
+              <Button variant="ghost" size="sm">
+                Activity
+              </Button>
             </Link>
           </div>
         )}
