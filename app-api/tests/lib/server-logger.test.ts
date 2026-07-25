@@ -60,4 +60,25 @@ describe("serverLogger", () => {
     expect(payload).not.toHaveProperty("stack");
     expect(payload).not.toHaveProperty("body");
   });
+
+  it("redacts credentials and bearer tokens from error messages", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    serverLogger.error(
+      "server.request_error",
+      new Error(
+        "mongodb://db-user:super-secret@host/db?token=abc123 Bearer bearer-secret sk_live_exampleSecret",
+      ),
+    );
+
+    const payload = JSON.parse(String(error.mock.calls[0][0]));
+    expect(payload.errorMessage).toContain("mongodb://[redacted]@host/db");
+    expect(payload.errorMessage).toContain("token=[redacted]");
+    expect(payload.errorMessage).toContain("Bearer [redacted]");
+    expect(payload.errorMessage).toContain("[redacted-secret]");
+    expect(payload.errorMessage).not.toContain("super-secret");
+    expect(payload.errorMessage).not.toContain("abc123");
+    expect(payload.errorMessage).not.toContain("bearer-secret");
+    expect(payload.errorMessage).not.toContain("sk_live_exampleSecret");
+  });
 });
