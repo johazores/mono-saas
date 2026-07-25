@@ -1,11 +1,15 @@
-import type { PaymentConfig, StripeSubscription, StripeInvoice } from "@/types";
+import type {
+  PaymentConfig,
+  ProviderSubscription,
+  ProviderInvoice,
+} from "@/types";
 
-export type { StripeSubscription, StripeInvoice };
+export type { ProviderSubscription, ProviderInvoice };
 
 export type ProviderLineItem = {
   priceId: string;
   quantity: number;
-  productId: string; // internal ID for metadata
+  productId: string;
 };
 
 export type CreateSessionInput = {
@@ -39,52 +43,6 @@ export type BillingPortalResult = {
   url: string;
 };
 
-/* ------------------------------------------------------------------ */
-/* Internal Stripe API response shapes (used by providers/catalog)     */
-/* ------------------------------------------------------------------ */
-
-export type StripeSession = {
-  id: string;
-  url: string;
-  payment_status: "paid" | "unpaid" | "no_payment_required";
-  customer: string | null;
-  customer_email: string | null;
-  customer_details?: { email: string | null; name: string | null };
-  subscription: string | null;
-  payment_intent: string | null;
-  metadata: Record<string, string>;
-};
-
-export type StripeLineItem = {
-  data: { price: { id: string }; quantity: number }[];
-};
-
-export type StripeProductResponse = {
-  id: string;
-  name: string;
-  description: string | null;
-  images: string[];
-  active: boolean;
-  metadata: Record<string, unknown>;
-};
-
-export type StripePriceResponse = {
-  id: string;
-  unit_amount: number | null;
-  currency: string;
-  recurring: { interval: string } | null;
-  nickname: string | null;
-  type: string;
-  active: boolean;
-  product: string;
-};
-
-export type StripeList<T> = { data: T[] };
-
-/* ------------------------------------------------------------------ */
-/* Provider interface                                                   */
-/* ------------------------------------------------------------------ */
-
 export interface PaymentProviderInterface {
   createCheckoutSession(
     input: CreateSessionInput,
@@ -111,10 +69,10 @@ export interface PaymentProviderInterface {
   getCustomerSubscriptions(
     customerId: string,
     config: PaymentConfig,
-  ): Promise<StripeSubscription[]>;
+  ): Promise<ProviderSubscription[]>;
 
   getCustomerInvoices(
     customerId: string,
     config: PaymentConfig,
-  ): Promise<StripeInvoice[]>;
+  ): Promise<ProviderInvoice[]>;
 }
