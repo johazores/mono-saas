@@ -88,7 +88,7 @@ export async function mediaItemController(
   return sendError(res, "Method not allowed.", 405);
 }
 
-/** Serve base64 media file inline. */
+/** Serve storage-backed media through a short-lived redirect or legacy base64. */
 export async function mediaFileController(
   req: NextApiRequest,
   res: NextApiResponse,
@@ -99,14 +99,25 @@ export async function mediaFileController(
   }
 
   const id = String(req.query.id || "");
-  const item = await mediaService.getById(id);
 
-  if (!item || !item.base64Data) {
+  let access;
+  try {
+    access = await mediaService.getFileAccess(id);
+  } catch {
+    return sendError(res, "File is temporarily unavailable.", 503);
+  }
+
+  if (!access) {
     return sendError(res, "File not found.", 404);
   }
 
-  const buffer = Buffer.from(item.base64Data, "base64");
-  res.setHeader("Content-Type", item.mimeType || "application/octet-stream");
+  if (access.kind === "storage") {
+    res.setHeader("Cache-Control", "no-store");
+    return res.redirect(302, access.url);
+  }
+
+  const buffer = Buffer.from(access.data, "base64");
+  res.setHeader("Content-Type", access.mimeType);
   res.setHeader("Content-Length", buffer.length);
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
   res.status(200).end(buffer);
