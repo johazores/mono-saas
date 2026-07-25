@@ -1,255 +1,206 @@
 # Checkout and Payment System
 
-- **Status:** Current implementation; provider-neutral refactor accepted but not yet implemented
+- **Status:** Current Stripe implementation with provider-neutral billing interface; schema refactor pending
 - **Last verified:** 2026-07-25
 - **Related decisions:** ADR-004, ADR-005
 - **Roadmap:** T-701 through T-705, T-1001, T-1002
 
-> This guide describes the existing Stripe-centered checkout and billing behavior. Secret keys are now encrypted and masked as documented in `security.md`. The accepted target removes Stripe-specific interface and schema types, adds authoritative provider webhooks, and moves file bytes to object storage.
+> This guide describes the current Stripe-backed checkout implementation. T-701 is complete: shared provider contracts use neutral subscription and invoice records, while raw Stripe API shapes stay inside the Stripe adapter. The schema, customer-reference names, catalog UI, and webhook lifecycle remain Stripe-centered until T-702 and T-705.
 
-## Overview
+## Current architecture
 
-The system integrates with Stripe Checkout for secure payment processing. Products can have multiple price configurations with date ranges, supporting both one-time purchases and recurring subscriptions.
-
-## Architecture
-
-```
-Landing Page / Cart -> checkoutService.createSession -> Stripe Checkout (hosted)
-                                                              |
-                                                     (customer pays)
-                                                              |
-Success Page -> checkoutService.verifySession -> Create Purchase(s) -> Grant Membership
+```text
+Cart
+  -> checkoutService.createSession
+    -> PaymentProviderInterface
+      -> Stripe hosted checkout
+        -> browser success return
+          -> checkoutService.verifySession
+            -> Purchase and entitlement creation
 ```
 
-### Payment Provider Strategy
+The browser return is still important to fulfillment. Authoritative signed webhooks and idempotent event storage are tracked in T-705.
 
-The `PaymentProviderInterface` defines two operations:
+## Provider boundary
 
-- `createCheckoutSession(input, config)` — Creates a hosted checkout session
-- `verifySession(sessionId, config)` — Verifies payment status and retrieves customer details
+`lib/payment/types.ts` defines provider-neutral application records and operations:
 
-Currently implemented: **Stripe** (`lib/payment/stripe-provider.ts`). Uses raw `fetch()` to the Stripe API — no SDK dependency.
+- create and verify checkout sessions;
+- find or create a provider customer;
+- create a billing-management session;
+- list `ProviderSubscription` records;
+- list `ProviderInvoice` records.
 
-### Configuration
+`lib/payment/stripe-provider.ts` maps raw Stripe responses into those neutral records. Raw response contracts live in `lib/payment/stripe-types.ts` and are not exported as shared billing types.
 
-Payment settings are stored in `SiteSetting` and configured via **Admin > Settings**:
+Currently registered:
 
-| Key                            | Description                 |
-| ------------------------------ | --------------------------- |
-| `payment.provider`             | `"stripe"` (extensible)     |
-| `payment.mode`                 | `"test"` or `"live"`        |
-| `payment.stripe.testPublicKey` | Stripe test publishable key |
-| `payment.stripe.testSecretKey` | Stripe test secret key      |
-| `payment.stripe.livePublicKey` | Stripe live publishable key |
-| `payment.stripe.liveSecretKey` | Stripe live secret key      |
+| Provider | Status | Notes |
+| --- | --- | --- |
+| Stripe | Implemented | Raw HTTPS requests; no Stripe SDK dependency |
+| WooCommerce | Disabled placeholder | Must be completed against the neutral interface before registration |
 
-Secret-class setting values are encrypted before database persistence and are returned as a configured-value mask through administrator read endpoints.
+## Configuration
 
-## Checkout Flow
+Payment settings are stored in `SiteSetting` and managed through the administrator settings UI.
 
-### 1. Cart Page (`/cart`)
+| Key | Purpose |
+| --- | --- |
+| `payment.provider` | Active payment adapter |
+| `payment.mode` | `test` or `live` |
+| `payment.stripe.testPublicKey` | Test publishable key |
+| `payment.stripe.testSecretKey` | Encrypted test secret |
+| `payment.stripe.livePublicKey` | Live publishable key |
+| `payment.stripe.liveSecretKey` | Encrypted live secret |
 
-- Users browse products on the landing page and add items to cart
-- Cart state managed via React context (`CartProvider`) with localStorage persistence
-- Subscriptions (recurring products) require login — an amber notice directs users to log in
-- One-time purchases support guest checkout — Stripe collects email and billing details
-- Clicking "Proceed to Checkout" calls `POST /api/checkout`
+Secret values are encrypted before persistence and returned only as a configured-value mask through administrator read endpoints.
 
-### 2. Checkout Session Creation (API)
+## Checkout flow
 
-The controller validates items and delegates to `checkoutService.createSession()`:
+### Cart
 
-1. Loads and validates all products (exist, are active)
-2. Resolves Stripe price IDs via `ProductPrice` table
-3. Determines checkout mode: `"subscription"` if any item is recurring, else `"payment"`
-4. Creates a Stripe Checkout session via the payment provider
-5. Stores a `CheckoutSession` record in the database
-6. Returns the Stripe redirect URL
+- Products can be added from the public application.
+- Cart state persists in browser storage.
+- Recurring products require authentication.
+- One-time products permit guest checkout.
+- Checkout starts through `POST /api/checkout`.
 
-### 3. Stripe Checkout (Hosted)
+### Session creation
 
-The user is redirected to Stripe's hosted checkout page which collects:
+The checkout service:
 
-- Email address
-- Billing name and address
-- Payment method (card, etc.)
+1. loads and validates products;
+2. resolves the active `ProductPrice` for the configured mode;
+3. chooses payment or subscription mode;
+4. calls the selected provider adapter;
+5. stores `CheckoutSession` state;
+6. returns a hosted redirect URL.
 
-No redundant collection on our side — Stripe handles all customer data.
+### Hosted checkout
 
-### 4. Success Page (`/checkout/success`)
+Stripe currently collects email, billing details, and payment method. The application does not duplicate card handling.
 
-On successful payment, Stripe redirects to the success URL with a `session_id` parameter. The success page calls `POST /api/checkout/verify` which:
+### Success verification
 
-1. Looks up the stored `CheckoutSession`
-2. Verifies payment status with Stripe (`payment_status === "paid"`)
-3. For guest checkout: creates a user account using Stripe-provided email and name
-4. Creates `Purchase` records for each item
-5. Marks the session as `"completed"`
-6. Returns purchase details and optional new user info
+The success page calls `POST /api/checkout/verify`. The API:
 
-### 5. Cancellation Page (`/checkout/cancel`)
+1. loads the local checkout session;
+2. verifies the remote session;
+3. creates a guest user when applicable;
+4. creates purchases and entitlements;
+5. marks the checkout session completed.
 
-If the user cancels, Stripe redirects to the cancel URL. The session remains `"pending"`.
+If the customer closes the browser before this path runs, fulfillment can be delayed. T-705 removes that weakness through signed provider webhooks.
 
-## Product Prices
+## Prices
 
-### Multiple Prices per Product
+`ProductPrice` currently stores:
 
-The `ProductPrice` model supports multiple Stripe price IDs per product:
+- a Stripe price ID;
+- test/live mode;
+- amount and currency;
+- optional recurring interval;
+- start/end dates;
+- default state.
 
-- **Date ranges**: `startDate` and `endDate` control when a price is active
-- **Default flag**: `isDefault` marks the preferred price when multiple are active
-- **Mode**: Separate prices for `"test"` and `"live"` Stripe modes
-- **Interval**: `"month"`, `"year"`, or `null` for one-time
+Active-price resolution prefers a current default record and then the most recent eligible record.
 
-### Price Resolution at Checkout
+This schema is intentionally documented as transitional. T-702 separates neutral price data from provider-keyed external references.
 
-`resolveStripePriceId()` in the checkout service:
-
-1. Queries `ProductPrice` for active prices matching the product and mode
-2. Active = `startDate <= now` AND (`endDate` is null OR `endDate > now`)
-3. Prefers the default price, then most recent by start date
-4. Throws if no active `ProductPrice` is configured
-
-### Admin Management
-
-Navigate to **Admin > Products > [Product] > Prices** to manage price configurations. Each price entry includes label, Stripe price ID, mode, amount, currency, interval, date range, and default flag.
-
-## File Downloads
-
-### PurchaseFile Model
-
-Digital products can have downloadable files attached to purchases:
-
-- `fileName` — Display name
-- `mimeType` — MIME type for Content-Type header
-- `sizeBytes` — File size in bytes
-- `data` — Base64-encoded file content
-
-This is the current implementation. ADR-005 accepts migration to object storage; new features should not expand base64 payload usage.
-
-### Download Endpoints
-
-- `GET /api/users/auth/downloads` — List all downloadable files for the authenticated user
-- `GET /api/users/auth/downloads/:fileId` — Download a specific file (binary response)
-
-Both endpoints require authentication and verify purchase ownership.
-
-### User Interface
-
-The **Downloads** page in the user dashboard shows files grouped by purchase, with product name, purchase date, file metadata, and download buttons.
-
-## Guest Checkout
-
-For one-time purchases, users can check out without an account:
-
-1. Cart page shows a note that Stripe will collect their details
-2. After successful payment, `verifySession` creates a user account using the email and name from Stripe's `customer_details`
-3. The success page shows an "Account Created" notice directing the user to set a password
-
-Recurring subscriptions always require login — the cart page enforces this with a login gate.
-
-## Activity Logging
-
-All checkout and payment actions are logged:
-
-| Action            | When                                   |
-| ----------------- | -------------------------------------- |
-| `checkout.create` | Checkout session initiated             |
-| `checkout.verify` | Payment verified and purchases created |
-| `price.create`    | Admin creates a product price          |
-| `price.update`    | Admin updates a product price          |
-| `price.delete`    | Admin deletes a product price          |
-| `file.download`   | User downloads a purchase file         |
-
-## Seeded Data
-
-The seed script creates test-mode prices for all paid products:
-
-- Starter: Monthly ($9.99) + Yearly ($99.99)
-- Pro: Monthly ($29.99)
-- Enterprise: Monthly ($99.99)
-- Premium Membership: Monthly ($19.99)
-- SEO Report: One-time ($49.99)
-- API Access Pass: One-time ($199.99)
-
-A sample purchase file (`starter-guide.txt`) is attached to the demo user's Starter subscription.
-
-## Replication Guide
-
-To set up the checkout system:
-
-1. Create a Stripe account
-2. Get your test API keys from the Stripe Dashboard
-3. Configure `ENCRYPTION_KEY` and deploy the secret-encryption migration before saving real provider credentials
-4. Run the seed script: `pnpm db:seed`
-5. Navigate to **Admin > Settings** and enter your Stripe test keys
-6. Create products in **Admin > Products** and configure Stripe price IDs
-7. Or use **Admin > Products > [Product] > Prices** to add date-ranged prices
-8. Visit the landing page, add products to cart, and test the checkout flow
-
-Note: Stripe price IDs in the seed data are placeholders. Replace them with real IDs from your Stripe Dashboard for actual payment testing.
-
-## Billing Portal and Sync
-
-### Stripe Billing Portal
-
-Authenticated users can manage their subscriptions via the Stripe Billing Portal:
-
-- **Endpoint**: `POST /api/users/auth/billing` with `{ returnUrl }` — creates a portal session and returns the Stripe-hosted URL
-- **UI**: "Manage Billing" button on the account page
-- **Capabilities**: View invoices, update payment methods, cancel subscriptions
-
-### Billing Sync
-
-Stripe subscription and invoice data is synced to local Purchase records to keep the database current:
-
-- **Manual sync**: `PUT /api/users/auth/billing` — user clicks "Sync from Stripe" on the account page (bypasses throttle)
-- **Automatic sync**: Background sync (fire-and-forget, non-blocking) triggers at:
-  - User login (after successful authentication)
-  - Session check (`/me` endpoint, fires on page load)
-  - Admin user detail view (when admin views a specific user)
-- **Throttling**: 5-minute per-user cooldown prevents excessive Stripe API calls during automatic sync
-- **Interval source**: Billing interval (month/year) is derived from Stripe's `price.recurring.interval`, not from the local `Product.interval` field
-
-### Purchase Deduplication
-
-Three paths can create Purchase records for the same payment: checkout verification (`cs_xxx`), subscription sync (`sub_xxx`), and invoice sync (`in_xxx`). To prevent duplicates:
-
-- `checkoutService.verifySession` uses `subscriptionId || paymentIntentId || sessionId` as the Purchase `externalId` — matching the IDs billing sync will later use
-- `billingService.upsertPurchase` checks `externalId` before creating and also accepts `paymentIntentId` as a fallback lookup
-
-### Billing Status
+## Billing status and synchronization
 
 `GET /api/users/auth/billing` returns:
 
-| Field               | Type                   | Description                               |
-| ------------------- | ---------------------- | ----------------------------------------- |
-| `hasStripeCustomer` | `boolean`              | Whether user has a linked Stripe customer |
-| `portalUrl`         | `string \| null`       | Reserved for future use                   |
-| `subscriptions`     | `StripeSubscription[]` | Active and past subscriptions             |
-| `invoices`          | `StripeInvoice[]`      | Payment history                           |
-| `syncedAt`          | `string \| null`       | Last sync timestamp                       |
+| Field | Current type | Notes |
+| --- | --- | --- |
+| `hasStripeCustomer` | `boolean` | Compatibility name until T-702 |
+| `portalUrl` | `string \| null` | Reserved/current portal state |
+| `subscriptions` | `ProviderSubscription[]` | Provider-neutral records |
+| `invoices` | `ProviderInvoice[]` | Provider-neutral records |
+| `syncedAt` | `string \| null` | Last local synchronization time |
 
-### Payment Providers
+The Stripe adapter maps:
 
-The system uses a strategy pattern (`PaymentProviderInterface`) with pluggable providers:
+```text
+Stripe subscription -> ProviderSubscription
+Stripe invoice      -> ProviderInvoice
+```
 
-| Provider      | Status      | Description                                                        |
-| ------------- | ----------- | ------------------------------------------------------------------ |
-| `stripe`      | Implemented | Full integration via raw fetch (no SDK)                            |
-| `woocommerce` | Placeholder | Commented-out skeleton for future WooCommerce REST API integration |
+Neutral invoice fields include `paymentId`, `productId`, and `priceId`; shared services no longer depend on `stripeProductId` or `stripePriceId`.
 
-Provider selection is configured in **Admin > Settings** via `payment.provider`.
+### Current sync triggers
 
-## Stripe Catalog Browsing
+- login background sync;
+- member session check;
+- administrator user-detail access;
+- explicit member sync.
 
-Admin endpoints for browsing the live Stripe product catalog (read-only):
+A five-minute in-memory throttle limits automatic repeated synchronization.
 
-| Endpoint                          | Method | Description                       |
-| --------------------------------- | ------ | --------------------------------- |
-| `/api/stripe/products`            | GET    | List all active Stripe products   |
-| `/api/stripe/products/:productId` | GET    | Product detail with nested prices |
-| `/api/stripe/prices/:priceId`     | GET    | Individual price lookup           |
+### Purchase matching
 
-All require admin authentication. The admin Products page uses these to browse Stripe and auto-fill product/price configurations.
+The service currently maps neutral provider product/price IDs back to Stripe-specific schema fields. This compatibility bridge is removed by T-702.
+
+Purchase deduplication checks the primary provider external ID and, for invoices, the payment ID used by checkout verification.
+
+## Billing portal
+
+Authenticated users can request a hosted billing-management URL through the billing endpoint. Stripe currently supplies the portal experience for payment methods, invoices, and subscription cancellation.
+
+Portal capability is part of the shared provider interface, but providers without a native portal may return an account-management URL or explicitly report the capability unavailable in a future capability model.
+
+## Digital files
+
+`PurchaseFile` currently stores base64 bytes in MongoDB and exposes authenticated ownership-checked download endpoints.
+
+ADR-005 and T-1001/T-1002 replace this with private object storage, signed delivery, and metadata-only database rows. New work must not expand base64 file usage.
+
+## Guest checkout
+
+One-time purchases currently permit guest checkout. After verified payment, the system creates or resolves a local user from provider-returned customer details. Recurring subscriptions require an authenticated account.
+
+Guest provisioning should later use the same explicit identity-linking and invitation/open-signup policies as the accepted authentication architecture.
+
+## Activity logging
+
+Current payment-related actions include:
+
+- `checkout.create`;
+- `checkout.verify`;
+- `price.create`;
+- `price.update`;
+- `price.delete`;
+- `file.download`.
+
+Webhook processing will add provider event receipt, duplicate detection, processing outcome, and replay audit records.
+
+## Stripe catalog browsing
+
+Administrator-only Stripe catalog routes currently provide product and price browsing:
+
+| Endpoint | Method |
+| --- | --- |
+| `/api/stripe/products` | GET |
+| `/api/stripe/products/:productId` | GET |
+| `/api/stripe/prices/:priceId` | GET |
+
+These are provider-specific administrator tools and may remain in a Stripe module after the core billing schema becomes neutral.
+
+## Operational setup
+
+1. Configure `ENCRYPTION_KEY` before storing provider secrets.
+2. Run the settings encryption migration for existing databases.
+3. Rotate any secret that was previously stored in plaintext.
+4. Save Stripe test keys through administrator settings.
+5. Replace seeded placeholder product/price IDs with real test-mode IDs.
+6. Test checkout, verification, portal, invoice, subscription, and duplicate-sync paths.
+
+Do not enable live mode until webhook processing and production credential rotation are complete.
+
+## Remaining billing work
+
+- **T-702:** provider-keyed customer, product, and price references in the schema;
+- **T-703:** complete or remove the WooCommerce adapter;
+- **T-704:** PayMongo adapter after neutral external references exist;
+- **T-705:** signed webhooks, event storage, idempotency, and replay tolerance;
+- **T-1001/T-1002:** object storage and base64 migration.
