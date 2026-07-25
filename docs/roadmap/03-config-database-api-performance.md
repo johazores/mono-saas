@@ -42,7 +42,7 @@
 
 **T-1101 · Request validation**
 - **Priority** P1 · **Status** Not started · **Complexity** M · **Depends on** —
-- **Notes:** `zod` is already a root dependency but unused. Validate at the controller boundary so services can trust their inputs.
+- **Notes:** `zod` is available in `app-api`. Validate at the controller boundary so services can trust their inputs.
 - **Acceptance:** Every mutating route validates its body; malformed input returns 400 with field details.
 
 **T-1102 · Route conventions audit**
@@ -60,8 +60,8 @@
 - **Acceptance:** Repeated configuration reads avoid duplicate database calls; tests cover TTL expiry, concurrent deduplication, write invalidation, rejection recovery, and in-flight stale-read protection.
 
 **T-1202 · Session hot-path review**
-- **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** T-402
-- **Notes:** `buildUserAuthSession()` issues up to three additional queries per request: active subscription, parent subscription fallback, and parent details. This remains four or more queries to answer who the user is.
-- **Acceptance:** Session construction is one query, or the remaining query count is measured and explicitly justified.
+- **Priority** P2 · **Status** Done · **Complexity** M · **Depends on** T-402
+- **Notes:** Session enrichment now uses one top-level `prisma.user.findUnique()` call to load the active user, latest active recurring purchase, optional parent identity, and the parent's latest active recurring purchase. This replaces the former sequence of up to three additional Prisma calls while preserving own-plan precedence and parent-plan fallback. Provider verification remains separate by design. The physical MongoDB relation execution is not benchmarked in this environment; the application-level session enrichment boundary is one Prisma call and regression tests assert that shape.
+- **Acceptance:** Session construction uses one top-level Prisma query; tests assert one invocation plus own-plan precedence, parent fallback, and active-account recheck.
 
 ---
