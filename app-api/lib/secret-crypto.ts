@@ -49,6 +49,11 @@ function getEncryptionKey(version: number): Buffer {
   return parseEncryptionKey(process.env[legacyName], legacyName);
 }
 
+export function validateCurrentEncryptionKeyConfig(): void {
+  const currentVersion = getCurrentEncryptionKeyVersion();
+  getEncryptionKey(currentVersion);
+}
+
 function additionalData(version: number): Buffer {
   return Buffer.from(`mono-saas:setting:${ALGORITHM}:v${version}`, "utf8");
 }
