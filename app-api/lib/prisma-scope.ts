@@ -130,8 +130,7 @@ function normalizeRelationScalarWrites(
     if (
       relation.isList ||
       relation.fromFields.length === 0 ||
-      !isEnvScopedModel(relation.targetModel) ||
-      data[fieldName] !== undefined
+      !isEnvScopedModel(relation.targetModel)
     ) {
       continue;
     }
@@ -140,6 +139,12 @@ function normalizeRelationScalarWrites(
       Object.prototype.hasOwnProperty.call(data, field),
     );
     if (presentFields.length === 0) continue;
+
+    if (data[fieldName] !== undefined) {
+      throw new Error(
+        `Ambiguous relation write for ${model}.${fieldName}: use either relation data or relation scalar fields.`,
+      );
+    }
 
     if (presentFields.length !== relation.fromFields.length) {
       throw new Error(
@@ -381,7 +386,7 @@ function scopeSelection(
       parentConditions.push(relationMatches);
     } else {
       parentConditions.push({
-        OR: [{ [fieldName]: { is: null } }, relationMatches],
+        OR: [{ [fieldName]: null }, relationMatches],
       });
     }
   }
