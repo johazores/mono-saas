@@ -6,6 +6,7 @@ vi.mock("@/lib/secure-credentials", () => ({
   getUserSessionSecret: () => "test-secret-at-least-32-characters-long",
 }));
 vi.mock("@/lib/clerk-auth", () => ({
+  verifyClerkAuthorization: vi.fn(),
   verifyClerkToken: vi.fn(),
   getClerkUserProfile: vi.fn(),
 }));

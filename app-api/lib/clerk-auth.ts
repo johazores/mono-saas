@@ -40,14 +40,13 @@ function cacheProfile(userId: string, value: ClerkProfile): void {
 }
 
 /**
- * Verify a Clerk JWT from the Authorization header.
+ * Verify a Clerk JWT from an Authorization header.
  * The `authorizedParties` allowlist is mandatory to prevent tokens minted for
  * another frontend origin from being accepted by this API.
  */
-export async function verifyClerkToken(
-  req: NextApiRequest,
+export async function verifyClerkAuthorization(
+  authHeader: string | undefined,
 ): Promise<ClerkJwtPayload | null> {
-  const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) return null;
 
   const token = authHeader.slice(7);
@@ -87,6 +86,13 @@ export async function verifyClerkToken(
   } catch {
     return null;
   }
+}
+
+/** Compatibility wrapper for existing callers/tests using NextApiRequest. */
+export async function verifyClerkToken(
+  req: NextApiRequest,
+): Promise<ClerkJwtPayload | null> {
+  return verifyClerkAuthorization(req.headers.authorization);
 }
 
 /**
