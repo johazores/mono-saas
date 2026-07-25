@@ -31,6 +31,8 @@ export type {
   PaymentModel,
   ProductRecord,
   CreateProductInput,
+  EmbeddedProductPriceInput,
+  CreateProductWithPricesInput,
   UpdateProductInput,
 } from "./product";
 export type { PurchaseStatus, PurchaseRecord } from "./purchase";
