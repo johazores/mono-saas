@@ -3,8 +3,8 @@
 ### WS-3 · Multi-tenancy
 
 **T-301 · Per-request tenant context**
-- **Priority** P0 · **Status** Not started · **Complexity** L · **Depends on** T-001, T-002
-- **Notes:** Establish `AsyncLocalStorage` at the API boundary and read it from the future tenant-scoped Prisma extension. **No module-level mutable tenant state under any circumstances.** Resolution order: authenticated membership → host strategy → explicit audited platform-admin override.
+- **Priority** P0 · **Status** In progress · **Complexity** L · **Depends on** T-001, T-002
+- **Notes:** `AsyncLocalStorage` now provides immutable request-local scope with request ID, deployment env, future `tenantId`, and resolution source. `getAppEnv()` prefers that request snapshot, so downstream Prisma work no longer depends on module-global mutable state once a route is wrapped. The member login/register/logout/session routes establish context through `withRequestScope()`. Public `x-tenant-id` is deliberately ignored. Remaining work: adopt the wrapper across all API route groups, resolve `tenantId` from authenticated membership/host strategy after T-305, and add real concurrent route/database isolation coverage.
 - **Acceptance:** Concurrent requests for different tenants in one process never observe each other's context; a load test asserts this.
 
 **T-302 · Derive scoped models from DMMF**
@@ -29,7 +29,7 @@
 
 **T-306 · Tenant resolution strategies**
 - **Priority** P1 · **Status** Not started · **Complexity** M · **Depends on** T-301
-- **Notes:** Subdomain, custom domain, path prefix, and trusted internal header strategies. Configuration selects one public resolution strategy at a time.
+- **Notes:** Subdomain, custom domain, path prefix, and trusted internal header strategies. Configuration selects one public resolution strategy at a time. Do not accept a public tenant ID header until membership/host validation is authoritative.
 - **Acceptance:** At least subdomain and trusted-header resolution work; strategy is configuration-driven.
 
 ---
