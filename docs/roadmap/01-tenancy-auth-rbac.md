@@ -4,7 +4,7 @@
 
 **T-301 · Per-request tenant context**
 - **Priority** P0 · **Status** In progress · **Complexity** L · **Depends on** T-001, T-002
-- **Notes:** `AsyncLocalStorage` now provides immutable request-local scope with request ID, deployment env, future `tenantId`, and resolution source. `getAppEnv()` prefers that request snapshot, so downstream Prisma work no longer depends on module-global mutable state once a route is wrapped. The member login/register/logout/session routes establish context through `withRequestScope()`. Public `x-tenant-id` is deliberately ignored. Remaining work: adopt the wrapper across all API route groups, resolve `tenantId` from authenticated membership/host strategy after T-305, and add real concurrent route/database isolation coverage.
+- **Notes:** `AsyncLocalStorage` now provides immutable request-local scope with request ID, deployment env, future `tenantId`, and resolution source. `getAppEnv()` prefers that request snapshot, so downstream Prisma work no longer depends on module-global mutable state once a route is wrapped. The member login/register/logout/session routes establish context through `withRequestScope()`. T-306 now provides configuration-driven request candidate strategies, but candidates are deliberately not copied into `tenantId` until T-305 can map them to authoritative tenant/domain/membership records. Public `x-tenant-id` remains ignored. Remaining work: adopt the wrapper across all API route groups, perform authoritative tenant binding after T-305, and add real concurrent route/database isolation coverage.
 - **Acceptance:** Concurrent requests for different tenants in one process never observe each other's context; a load test asserts this.
 
 **T-302 · Derive scoped models from DMMF**
@@ -28,8 +28,8 @@
 - **Acceptance:** Schema migrated; seed produces two tenants; full test suite green.
 
 **T-306 · Tenant resolution strategies**
-- **Priority** P1 · **Status** Not started · **Complexity** M · **Depends on** T-301
-- **Notes:** Subdomain, custom domain, path prefix, and trusted internal header strategies. Configuration selects one public resolution strategy at a time. Do not accept a public tenant ID header until membership/host validation is authoritative.
+- **Priority** P1 · **Status** Done · **Complexity** M · **Depends on** T-301
+- **Notes:** Added subdomain, custom-domain, path-prefix, and HMAC-signed trusted-header candidate strategies. Global unscoped `SystemConfig.TENANT_RESOLUTION` selects exactly one mode and is cached for five seconds; the trusted-header secret comes only from `TENANT_RESOLUTION_SHARED_SECRET`, never from database JSON. Host/path/key normalization, timestamp skew, signature comparison, replay binding, and public-header spoofing are covered by focused tests. Resolution returns only an untrusted candidate key; authoritative mapping to `tenantId` remains T-301/T-305.
 - **Acceptance:** At least subdomain and trusted-header resolution work; strategy is configuration-driven.
 
 ---
