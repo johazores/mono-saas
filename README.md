@@ -2,6 +2,10 @@
 
 A monorepo with two Next.js applications: an API backend and an admin panel frontend.
 
+## Project Roadmap
+
+The verified architecture review and implementation source of truth is maintained in [`docs/MASTER_PLAN.md`](docs/MASTER_PLAN.md). All planned work should reference its stable task IDs in branches and pull requests.
+
 ## Project Structure
 
 ```
