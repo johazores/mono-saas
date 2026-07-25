@@ -37,6 +37,8 @@ registerSettingDefinitions("core", [
   { key: "auth.provider" },
   { key: "auth.clerkPublishableKey" },
   { key: "auth.clerkSecretKey", secret: true },
+  { key: "auth.authorizedParties" },
+  { key: "auth.openSignup" },
   { key: "payment.provider" },
   { key: "payment.mode" },
   { key: "payment.stripe.testPublicKey" },
