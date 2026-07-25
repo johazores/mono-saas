@@ -6,7 +6,10 @@ vi.mock("@/lib/env", () => ({
 }));
 
 import { getAppEnv } from "@/lib/env";
-import { withRequestScope } from "@/lib/api-request-scope";
+import {
+  resolveRequestId,
+  withRequestScope,
+} from "@/lib/api-request-scope";
 import { getRequestScope } from "@/lib/request-scope";
 
 const mockGetAppEnv = vi.mocked(getAppEnv);
@@ -15,8 +18,12 @@ function request(headers: Record<string, string> = {}): NextApiRequest {
   return { headers } as unknown as NextApiRequest;
 }
 
-function response(): NextApiResponse {
-  return {} as NextApiResponse;
+function response() {
+  const setHeader = vi.fn();
+  return {
+    res: { setHeader } as unknown as NextApiResponse,
+    setHeader,
+  };
 }
 
 beforeEach(() => {
@@ -25,8 +32,9 @@ beforeEach(() => {
 });
 
 describe("withRequestScope", () => {
-  it("captures deployment scope once before the handler runs", async () => {
+  it("captures deployment scope and returns the request ID header", async () => {
     let observed: ReturnType<typeof getRequestScope> = null;
+    const { res, setHeader } = response();
 
     const handler: NextApiHandler = async () => {
       await Promise.resolve();
@@ -35,7 +43,7 @@ describe("withRequestScope", () => {
 
     await withRequestScope(handler)(
       request({ "x-request-id": "request-123" }),
-      response(),
+      res,
     );
 
     expect(mockGetAppEnv).toHaveBeenCalledTimes(1);
@@ -44,11 +52,13 @@ describe("withRequestScope", () => {
       env: "dev",
       source: "deployment",
     });
+    expect(setHeader).toHaveBeenCalledWith("X-Request-Id", "request-123");
     expect(getRequestScope()).toBeNull();
   });
 
   it("does not trust a public tenant header", async () => {
     let observed: ReturnType<typeof getRequestScope> = null;
+    const { res } = response();
 
     const handler: NextApiHandler = async () => {
       observed = getRequestScope();
@@ -59,7 +69,7 @@ describe("withRequestScope", () => {
         "x-request-id": "request-tenant-attempt",
         "x-tenant-id": "attacker-selected-tenant",
       }),
-      response(),
+      res,
     );
 
     expect(observed?.tenantId).toBeUndefined();
@@ -68,15 +78,23 @@ describe("withRequestScope", () => {
 
   it("bounds caller-provided request IDs", async () => {
     let requestId = "";
+    const { res, setHeader } = response();
     const handler: NextApiHandler = async () => {
       requestId = getRequestScope()?.requestId ?? "";
     };
 
     await withRequestScope(handler)(
       request({ "x-request-id": "x".repeat(500) }),
-      response(),
+      res,
     );
 
     expect(requestId).toHaveLength(128);
+    expect(setHeader).toHaveBeenCalledWith("X-Request-Id", "x".repeat(128));
+  });
+
+  it("generates a UUID when no request ID is supplied", () => {
+    expect(resolveRequestId(request())).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
   });
 });
