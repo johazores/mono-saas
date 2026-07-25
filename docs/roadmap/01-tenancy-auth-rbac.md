@@ -13,8 +13,8 @@
 - **Acceptance:** Adding a scoped model requires no edit to `lib/prisma.ts`; tests assert the derived set matches the current schema.
 
 **T-303 · Close nested-relation scope leak**
-- **Priority** P0 · **Status** Not started · **Complexity** L · **Depends on** T-302
-- **Notes:** Explicit scope values already present inside logical, relation, and compound filters are overwritten. Missing scope in arbitrary nested `include`, `select`, relation filters, and nested writes remains unresolved because Prisma filter and JSON objects cannot be safely distinguished by a generic runtime walker.
+- **Priority** P0 · **Status** In progress · **Complexity** L · **Depends on** T-302
+- **Notes:** Schema-derived relation metadata now scopes list `include`/`select` queries, required and optional to-one selections, relation counts, nested `connect`/`set`/`create`/`update`/`upsert`/bulk writes, and unchecked declared-relation scalar IDs by normalizing them into scoped `connect` selectors. JSON payloads are not generically walked. Remaining work is real two-scope database proof plus migration or explicit treatment of soft ObjectId references that are not Prisma relations (`CheckoutSession.userId`, `TaxonomyTerm.parentId`, `Membership.sourceId`, and similar fields).
 - **Acceptance:** A cross-tenant relation read and nested write are impossible; regression tests seed two tenants and assert isolation through relations.
 
 **T-304 · Remove the caller-override path**
@@ -24,7 +24,7 @@
 
 **T-305 · Schema migration**
 - **Priority** P0 · **Status** Not started · **Complexity** L · **Depends on** T-001, T-304
-- **Notes:** Apply ADR-001 across the 19 current models carrying `env` and every compound unique/index. Add tenant/workspace foundations and reconcile `User.parentId`/`ancestors` according to ADR-002.
+- **Notes:** Apply ADR-001 across the 19 current models carrying `env` and every compound unique/index. Add tenant/workspace foundations and reconcile `User.parentId`/`ancestors` according to ADR-002. Soft ObjectId references must either become declared tenant-safe relations or receive explicit tenant-aware validation during this migration.
 - **Acceptance:** Schema migrated; seed produces two tenants; full test suite green.
 
 **T-306 · Tenant resolution strategies**

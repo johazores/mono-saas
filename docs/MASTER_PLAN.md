@@ -67,22 +67,25 @@ Nineteen models carry `env: "dev" | "production"`. Environment partitioning occu
 
 ADR-001 accepts replacement of `env` with `tenantId`. Development, staging, and production will use separate deployments and databases.
 
-**F-3 — The current scoping extension is unsafe for tenancy. `P0` — Partially resolved**
+**F-3 — The current scoping extension is unsafe for tenancy. `P0` — Substantially hardened, proof pending**
 
 Resolved in the current environment guard:
 
-- scoped models are derived from the Prisma schema rather than a hand-maintained list;
+- scoped models and relation metadata are derived from the Prisma schema rather than hand-maintained lists;
 - `UserInvitation` is automatically included;
 - caller-supplied scope is overwritten in top-level, logical, relation-filter, and compound-unique filters;
-- create, update, create-many, update-many, and upsert data cannot move a record into a caller-selected environment;
-- `findFirst` and similar operations receive a scope filter even when the caller supplied no `where`.
+- list relation `include`/`select` reads and filtered relation counts receive the active scope;
+- selected to-one relations add parent-query scope conditions, including optional relations;
+- nested relation `connect`, `set`, `create`, `createMany`, `connectOrCreate`, `update`, `updateMany`, `delete`, `deleteMany`, and `upsert` paths are scope-aware;
+- unchecked declared-relation scalar IDs are normalized into scope-aware `connect` selectors;
+- JSON data is not generically traversed, so provider/content payloads containing a key named `env` remain untouched.
 
 Remaining release blockers for tenant data:
 
-1. Missing scope is not independently added to arbitrary nested `include`, `select`, relation, and nested-write trees.
-2. Scope resolution still uses module-level mutable state suitable only for a deployment-wide environment.
+1. Scope resolution still uses deployment-wide environment state; real tenant scope must be request-local `AsyncLocalStorage`.
+2. Soft references that are not Prisma relations (`CheckoutSession.userId`, `CheckoutSession.items`, `TaxonomyTerm.parentId`, `Membership.sourceId`, and similar fields) need explicit tenant-aware treatment during T-305.
 3. `basePrisma` bypasses the guard and requires a narrow audited platform-admin boundary.
-4. Real two-tenant database integration tests do not exist.
+4. Real two-tenant database integration tests do not exist, so T-303 remains in progress rather than done.
 
 **F-4 — Stripe coupling reaches into the schema. `P1` — Interface resolved, schema and lifecycle open**
 
@@ -165,8 +168,8 @@ Detailed tasks, dependencies, notes, and acceptance criteria are split into focu
 ## 4. Current execution sequence
 
 1. **External rollout for T-101/T-103** — configure encryption key, migrate live rows, and rotate exposed provider credentials.
-2. **T-301 + T-303** — establish per-request tenant context and close missing nested relation/write scope before tenant data exists. T-302 and T-304 are complete in the current guard.
-3. **T-305 + T-1301** — migrate the schema and prove two-tenant isolation.
+2. **T-301 + finish T-303** — establish request-local tenant context and prove the nested relation/write guard against a real two-scope database.
+3. **T-305 + T-1301** — migrate the schema, convert soft references, and prove two-tenant isolation.
 4. **T-501 + T-502** — implement permission model and controller policy layer.
 5. **T-601 + T-602** — implement tenant workspace models and invitation flow.
 6. **T-401 + T-403** — finish the provider-neutral authentication registry for member and administrator contexts.
