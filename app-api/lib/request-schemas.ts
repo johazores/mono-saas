@@ -68,3 +68,26 @@ export const checkoutVerifyRequestSchema = z.object({
     .min(1, { error: "Session ID is required." })
     .max(255, { error: "Session ID is too long." }),
 });
+
+export const mediaCreateRequestSchema = z.object({
+  source: z.enum(["upload", "external"]).optional(),
+  fileName: z
+    .string({ error: "File name is required." })
+    .trim()
+    .min(1, { error: "File name is required." })
+    .max(255, { error: "File name is too long." }),
+  originalName: z.string().trim().max(255).optional().default(""),
+  url: z.string().trim().max(2048).optional(),
+  mimeType: z.string().trim().max(255).optional(),
+  size: z
+    .number({ error: "Size must be a number." })
+    .int({ error: "Size must be an integer." })
+    .min(0, { error: "Size cannot be negative." })
+    .optional(),
+  mediaType: z.enum(["image", "document", "file"]).optional(),
+  altText: z.string().trim().max(1_000).optional(),
+  base64Data: z
+    .string({ error: "File data must be a string." })
+    .max(700_000, { error: "File data is too large." })
+    .optional(),
+});

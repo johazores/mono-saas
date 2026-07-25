@@ -1,9 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { requireAdmin } from "@/lib/admin-auth";
 import { sendError, sendOk } from "@/lib/api-response";
-import { mediaService } from "@/services/media-service";
 import { logActivity } from "@/lib/activity-logger";
 import { verifyCsrf } from "@/lib/csrf";
+import { mediaCreateRequestSchema } from "@/lib/request-schemas";
+import { parseRequestBody } from "@/lib/request-validation";
+import { mediaService } from "@/services/media-service";
 
 export async function mediaCollectionController(
   req: NextApiRequest,
@@ -25,8 +27,11 @@ export async function mediaCollectionController(
   if (!verifyCsrf(req, res)) return;
 
   if (req.method === "POST") {
+    const input = parseRequestBody(res, mediaCreateRequestSchema, req.body);
+    if (!input) return;
+
     try {
-      const item = await mediaService.create(req.body);
+      const item = await mediaService.create(input);
       await logActivity(req, "media.create", {
         actor: "admin",
         actorId: session.admin.id,

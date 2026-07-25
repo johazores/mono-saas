@@ -22,6 +22,10 @@ function getMediaTypeFromMime(mimeType: string): string {
   return "file";
 }
 
+function getBase64ByteLength(value: string): number {
+  return Buffer.from(value.replace(/\s/g, ""), "base64").length;
+}
+
 function assertSupportedStorageProvider(provider: string): void {
   if (provider !== "s3-compatible") {
     throw new Error(`Unsupported storage provider: ${provider}`);
@@ -45,12 +49,15 @@ export const mediaService = {
       throw new Error("File type is not allowed.");
     }
 
-    const size = input.size || 0;
-    if (input.base64Data && size > MAX_BASE64_BYTES) {
+    const payloadBytes = input.base64Data
+      ? getBase64ByteLength(input.base64Data)
+      : 0;
+    if (payloadBytes > MAX_BASE64_BYTES) {
       throw new Error(
         `File is too large for base64 storage. Maximum is ${Math.round(MAX_BASE64_BYTES / 1024)}KB.`,
       );
     }
+    const size = input.base64Data ? payloadBytes : (input.size ?? 0);
 
     const created = await mediaRepository.create({
       source: input.source || "upload",
