@@ -137,3 +137,10 @@ export type {
   CreateInvitationInput,
   AcceptInvitationInput,
 } from "./invitation";
+export type {
+  TenantResolutionMode,
+  TenantResolutionSource,
+  TenantRequestInput,
+  TenantResolutionConfig,
+  TenantResolutionCandidate,
+} from "./tenant-resolution";
