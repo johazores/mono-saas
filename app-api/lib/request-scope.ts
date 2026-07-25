@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { AppEnv } from "@/types";
 
 export type RequestScopeSource =
   | "deployment"
@@ -10,7 +9,7 @@ export type RequestScopeSource =
 
 export type RequestScope = Readonly<{
   requestId: string;
-  env?: AppEnv;
+  env?: "dev" | "production";
   tenantId?: string;
   source: RequestScopeSource;
 }>;
