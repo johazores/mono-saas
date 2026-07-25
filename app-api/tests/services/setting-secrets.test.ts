@@ -28,6 +28,7 @@ function setting(key: string, value: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  settingService.invalidateCache();
   process.env.CLIENT_ORIGIN = "http://localhost:7000";
 });
 

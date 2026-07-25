@@ -9,7 +9,7 @@
 
 **T-902 · Define the bootstrap env surface**
 - **Priority** P1 · **Status** In progress · **Complexity** S · **Depends on** T-101
-- **Notes:** Encryption bootstrap variables and operational requirements are documented in `.env.example` and `docs/security.md`. Startup validation and the final surface depend on the `APP_ENV` tenancy decision.
+- **Notes:** Encryption bootstrap variables and operational requirements are documented in `.env.example` and `docs/security.md`. Startup validation and the final surface depend on completing the `APP_ENV` tenancy migration.
 - **Acceptance:** Documented list; startup validation; `.env.example` matches exactly.
 
 **T-903 · Settings change audit**
@@ -23,18 +23,18 @@
 
 **T-1001 · Object storage provider**
 - **Priority** P1 · **Status** Not started · **Complexity** L · **Depends on** T-005
-- **Notes:** Resolves F-7. `Media.source`/`url` already anticipate this. Rows keep key, size, mime, and metadata; bytes leave the database.
-- **Acceptance:** Upload and download work via object storage; a >20MB file succeeds.
+- **Notes:** Resolve F-7 using the object-storage boundary accepted in ADR-005. Rows retain provider, key, size, mime type, checksum, and metadata; bytes leave MongoDB.
+- **Acceptance:** Upload and download work through object storage; a file larger than 20 MB succeeds.
 
 **T-1002 · Migrate base64 rows**
 - **Priority** P1 · **Status** Not started · **Complexity** M · **Depends on** T-1001
-- **Notes:** One-shot script for `PurchaseFile.data` and `Media.base64Data`, then drop the columns.
+- **Notes:** Restartable migration for `PurchaseFile.data` and `Media.base64Data`, followed by removal of the payload columns after verification.
 - **Acceptance:** No base64 payload column remains.
 
 **T-1003 · Index review**
 - **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** T-305
-- **Notes:** After the scope-key migration, verify every high-traffic query is index-covered. `ActivityLog` in particular has no indexes at all and is append-heavy — it will be the first collection to hurt.
-- **Acceptance:** No collection scan on any hot path; `ActivityLog` indexed and retention-policied.
+- **Notes:** After the scope-key migration, verify every high-traffic query is index-covered. `ActivityLog` currently has no indexes and is append-heavy.
+- **Acceptance:** No collection scan on any hot path; `ActivityLog` is indexed and has a retention policy.
 
 ---
 
@@ -42,26 +42,26 @@
 
 **T-1101 · Request validation**
 - **Priority** P1 · **Status** Not started · **Complexity** M · **Depends on** —
-- **Notes:** `zod` is already a root dependency (F-10) but unused. Validate at the controller boundary so services can trust their inputs.
-- **Acceptance:** Every mutating route validates its body; malformed input returns 400 with field detail.
+- **Notes:** `zod` is already a root dependency but unused. Validate at the controller boundary so services can trust their inputs.
+- **Acceptance:** Every mutating route validates its body; malformed input returns 400 with field details.
 
 **T-1102 · Route conventions audit**
 - **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** —
-- **Notes:** 30 controllers across `pages/api` with several groupings (`/panel`, `/admins`, `/users/auth`, `/cms/public`). Confirm the grouping logic is intentional and consistent.
-- **Acceptance:** Conventions documented in T-204; outliers reconciled or justified.
+- **Notes:** Audit route groupings such as `/panel`, `/admins`, `/users/auth`, and `/cms/public`, then document or reconcile outliers.
+- **Acceptance:** Conventions are documented in T-204; outliers are reconciled or justified.
 
 ---
 
 ### WS-12 · Performance
 
 **T-1201 · Settings and config caching**
-- **Priority** P2 · **Status** Not started · **Complexity** S · **Depends on** T-101
-- **Notes:** `getPaymentConfig()` and `getAuthConfig()` hit the DB on every call with no caching, unlike `getAppEnv()`. Auth config is read on **every authenticated request**. Add a short TTL cache with explicit invalidation on write.
-- **Acceptance:** Authenticated request DB round-trips measurably reduced.
+- **Priority** P2 · **Status** Done · **Complexity** S · **Depends on** T-101
+- **Notes:** Authentication, Clerk-security, payment, and site configuration now use five-second in-process async TTL caches. Concurrent misses share one loader; administrator writes invalidate only affected groups. Generation-based invalidation prevents older in-flight reads from repopulating stale values.
+- **Acceptance:** Repeated configuration reads avoid duplicate database calls; tests cover TTL expiry, concurrent deduplication, write invalidation, rejection recovery, and in-flight stale-read protection.
 
 **T-1202 · Session hot-path review**
 - **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** T-402
-- **Notes:** `buildUserAuthSession()` issues up to three additional queries per request — active subscription, parent's subscription fallback, parent info. That is four-plus queries to answer "who is this".
-- **Acceptance:** Session build is one query, or documented as intentional with numbers.
+- **Notes:** `buildUserAuthSession()` issues up to three additional queries per request: active subscription, parent subscription fallback, and parent details. This remains four or more queries to answer who the user is.
+- **Acceptance:** Session construction is one query, or the remaining query count is measured and explicitly justified.
 
 ---
