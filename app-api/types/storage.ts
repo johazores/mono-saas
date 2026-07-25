@@ -1,4 +1,5 @@
 export type StorageHttpMethod = "GET" | "PUT" | "HEAD" | "DELETE";
+export type StorageProviderName = "s3-compatible";
 
 export type StorageObjectMetadata = {
   key: string;
@@ -32,6 +33,11 @@ export type S3CompatibleStorageConfig = {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
+};
+
+export type StorageConfig = {
+  provider: StorageProviderName;
+  s3: S3CompatibleStorageConfig;
 };
 
 export type S3PresignInput = {
