@@ -111,9 +111,9 @@ ADR-005 accepts provider-neutral object storage. Database rows will retain stora
 
 `Admin.role` remains a free string and users have no contextual role. ADR-002 establishes organization membership as the role assignment boundary. T-501 through T-503 implement permissions and policy enforcement.
 
-**F-9 — Settings used a hardcoded service allowlist. `P2` — Resolved**
+**F-9 — Settings used a hardcoded service allowlist and repeated hot-path reads. `P2` — Resolved**
 
-The settings registry now owns allowed keys, duplicate detection, and secret classification. Modules can contribute settings without editing `setting-service.ts`.
+The settings registry owns allowed keys, duplicate detection, and secret classification. Authentication, Clerk-security, payment, and site configuration use short async TTL caches with explicit write invalidation and stale in-flight protection.
 
 **F-10 — Root dependency and naming debt. `P3` — Open**
 
@@ -194,10 +194,10 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-9 Configuration | 3 | 2 |
 | WS-10 Database | 3 | 0 |
 | WS-11 API | 2 | 0 |
-| WS-12 Performance | 2 | 0 |
+| WS-12 Performance | 2 | 1 |
 | WS-13 Testing | 2 | 0 |
 | WS-14 Production | 3 | 0 |
 | WS-15 Tech debt | 5 | 0 |
-| **Total** | **60** | **17** |
+| **Total** | **60** | **18** |
 
 `In progress` and externally blocked work is not counted as done. The workstream files contain the authoritative status of each task.
