@@ -26,7 +26,10 @@ function setting(key: string, value: unknown) {
   };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  process.env.CLIENT_ORIGIN = "http://localhost:7000";
+});
 
 describe("secret setting read paths", () => {
   it("masks a configured secret returned by get", async () => {
@@ -87,5 +90,56 @@ describe("secret setting write paths", () => {
       "auth.clerkSecretKey",
       "sk_test_replacement",
     );
+  });
+});
+
+describe("Clerk security settings", () => {
+  it("uses stored authorized parties and keeps open signup disabled by default", async () => {
+    repository.getMany.mockResolvedValue([
+      setting("auth.authorizedParties", [
+        "http://localhost:7000",
+        "https://example.com",
+      ]),
+    ] as never);
+
+    await expect(settingService.getClerkSecurityConfig()).resolves.toEqual({
+      authorizedParties: ["http://localhost:7000", "https://example.com"],
+      openSignup: false,
+    });
+  });
+
+  it("falls back to CLIENT_ORIGIN when no database allowlist exists", async () => {
+    repository.getMany.mockResolvedValue([]);
+
+    await expect(settingService.getClerkSecurityConfig()).resolves.toEqual({
+      authorizedParties: ["http://localhost:7000"],
+      openSignup: false,
+    });
+  });
+
+  it("normalizes and validates authorized parties before saving", async () => {
+    repository.set.mockResolvedValue({} as never);
+
+    await settingService.set(
+      "auth.authorizedParties",
+      "http://localhost:7000, https://example.com",
+    );
+
+    expect(repository.set).toHaveBeenCalledWith("auth.authorizedParties", [
+      "http://localhost:7000",
+      "https://example.com",
+    ]);
+  });
+
+  it("rejects authorized parties containing paths", async () => {
+    await expect(
+      settingService.set("auth.authorizedParties", "https://example.com/app"),
+    ).rejects.toThrow("must be origins without paths");
+  });
+
+  it("requires open signup to be explicitly boolean", async () => {
+    await expect(
+      settingService.set("auth.openSignup", "true"),
+    ).rejects.toThrow("must be a boolean");
   });
 });
