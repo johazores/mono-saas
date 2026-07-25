@@ -1,11 +1,11 @@
 # Dual Authentication System
 
-- **Status:** Current implementation with accepted provider-neutral target
+- **Status:** Current implementation with provider-neutral verification boundary
 - **Last verified:** 2026-07-25
 - **Related decision:** ADR-003
 - **Roadmap:** T-401 through T-403
 
-The application currently supports two member authentication providers, configurable at runtime through the administrator settings panel. Administrator authentication remains a separate credentials-based context.
+The application supports two member authentication providers, configurable at runtime through the administrator settings panel. Member verification now uses a provider-neutral registry. Administrator authentication remains a separate credentials-based context pending T-403.
 
 ## Providers
 
@@ -15,7 +15,8 @@ Standard email/password authentication with:
 
 - PBKDF2-SHA512 password hashing;
 - cookie-based sessions using `user_session` with a 14-day normal expiry and HMAC-SHA256 token hashing;
-- built-in registration and login forms.
+- built-in registration and login forms;
+- a credentials adapter that verifies the local session and returns the same neutral identity contract used by external providers.
 
 ### Clerk
 
@@ -24,11 +25,45 @@ Third-party authentication with:
 - JWT verification from the `Authorization` bearer token;
 - a required `authorizedParties` origin allowlist;
 - Clerk-hosted sign-in/sign-up UI components;
-- local user linkage by verified provider subject and email;
+- a Clerk adapter that returns only provider, subject, optional email/name, and neutral claims;
+- local user linkage and provisioning outside the provider adapter;
 - closed automatic provisioning by default;
 - optional profile fallback only for a new identity when token claims are insufficient.
 
 Returning linked users are resolved from the local database without fetching the Clerk profile on every request.
+
+## Provider contract
+
+`lib/auth/types.ts` implements the ADR-003 boundary:
+
+```ts
+export type VerifiedIdentity = {
+  provider: string;
+  subject: string;
+  email?: string;
+  name?: string;
+  emailVerified?: boolean;
+  claims: Record<string, unknown>;
+};
+
+export type AuthRequest = {
+  authorization?: string;
+  cookies: Record<string, string | undefined>;
+  origin?: string;
+};
+
+export interface AuthProviderInterface {
+  readonly name: string;
+  verify(request: AuthRequest): Promise<VerifiedIdentity | null>;
+  getProfile?(subject: string): Promise<{
+    email?: string;
+    name?: string;
+  } | null>;
+  revokeSession?(sessionId: string): Promise<void>;
+}
+```
+
+Provider SDKs and transport-specific verification remain inside adapters. The shared session dispatcher receives only `VerifiedIdentity`.
 
 ## Configuration
 
@@ -49,33 +84,38 @@ Current setting keys:
 
 Secret-class settings are encrypted before database persistence and returned only as a configured-value mask through administrator read endpoints.
 
-## Clerk provisioning rules
+## Identity resolution and Clerk provisioning
 
-A valid Clerk token does not automatically guarantee local account creation.
+Provider verification does not authorize access. After a provider returns a verified identity, the local resolver owns account linkage, account state, invitations, and later tenant membership/RBAC.
 
-Resolution order:
+Current Clerk compatibility resolution:
 
-1. Verify the token and authorized origin.
-2. Find an existing local user linked to the Clerk subject in the current scope.
-3. When no link exists, resolve a verified email from claims or a cached Clerk profile fallback.
+1. Verify the Clerk token and authorized origin in the adapter.
+2. Resolve an existing local user linked to the Clerk subject in the current scope.
+3. When no link exists, resolve a verified email from claims or the cached profile fallback exposed through the adapter capability.
 4. Link an eligible existing local account when it is not already linked to another Clerk subject.
 5. Create a new local account only when:
    - a pending, unexpired local invitation matches the email; or
    - `auth.openSignup` is explicitly true.
 6. Mark a consumed invitation accepted.
+7. Reject the session if the resolved local account is not active.
 
-The accepted target moves provider-specific subjects from `User.clerkId` into a provider-neutral `ExternalIdentity` model.
+The `User.clerkId` resolver is explicitly temporary. T-305 replaces it with `ExternalIdentity(provider, subject)` so the local resolver becomes provider-neutral too.
 
 ## Architecture
 
 ### API (`app-api`)
 
-- **`lib/user-auth.ts`** — dispatches between the current credentials and Clerk paths, then builds the local application session.
-- **`lib/clerk-auth.ts`** — verifies Clerk JWTs, pins authorized origins, extracts optional claims, and performs cached profile fallback only when needed.
-- **`services/setting-service.ts`** — provides typed authentication and Clerk-security configuration.
-- **`repositories/invitation-repository.ts`** — resolves pending invitations with explicit environment scope.
-- **`controllers/setting-controller.ts`** — administrator-protected settings operations and public auth config.
-- **`controllers/user-auth-controller.ts`** — disables credentials login/registration while Clerk is selected.
+- **`lib/auth/types.ts`** — provider-neutral request, identity, profile, and provider interface.
+- **`lib/auth/index.ts`** — provider registry plus local identity-resolver registration.
+- **`lib/auth/credential-provider.ts`** — verifies local credential sessions and returns neutral identity.
+- **`lib/auth/clerk-provider.ts`** — maps Clerk verification/profile capability into the neutral contract.
+- **`lib/auth/identity-resolver.ts`** — local account linkage/provisioning; contains the temporary `User.clerkId` compatibility resolver.
+- **`lib/user-auth.ts`** — selects a registry entry, verifies identity, resolves the local user, enforces active account state, and builds the application session. It no longer imports Clerk verification/profile functions or branches directly between provider implementations.
+- **`lib/clerk-auth.ts`** — low-level Clerk JWT/profile integration used only by the Clerk adapter and compatibility tests.
+- **`services/setting-service.ts`** — typed authentication and Clerk-security configuration.
+- **`repositories/invitation-repository.ts`** — local invitation lifecycle.
+- **`controllers/user-auth-controller.ts`** — credentials login/registration transport flow and session endpoints.
 
 ### Client (`app-client`)
 
@@ -83,21 +123,13 @@ The accepted target moves provider-specific subjects from `User.clerkId` into a 
 - **`components/auth/clerk-auth.tsx`** — Clerk sign-in/sign-up presentation.
 - **`services/api-client.ts`** — attaches the Clerk bearer token when Clerk is active.
 
-### API routes
-
-| Route | Method | Auth | Description |
-| --- | --- | --- | --- |
-| `/api/settings/auth` | GET | Public | Returns public provider and publishable-key configuration |
-| `/api/panel/settings` | GET | Admin | Lists settings with secrets masked |
-| `/api/panel/settings/[key]` | PUT | Admin | Updates one allowed setting |
-
 ## Administrator authentication
 
 Administrator authentication remains password/session based and is not changed by switching the member provider.
 
-Impersonation is limited to one hour, creates a target session with the same lifetime, validates that the administrator remains active, and logs start/stop actions.
+Impersonation is limited to one hour, creates a target credentials session with the same lifetime, validates that the administrator remains active, requires the target user in the signed impersonation payload to match that session, and logs start/stop actions.
 
-ADR-003 accepts moving both member and administrator verification behind provider interfaces while preserving separate authorization contexts.
+T-403 moves administrator credentials behind the same verification contract while preserving a separate platform-administrator authorization context.
 
 ## Important notes
 
@@ -105,3 +137,4 @@ ADR-003 accepts moving both member and administrator verification behind provide
 - A Clerk-created local user has an empty password hash and cannot use credentials login until a password lifecycle is deliberately added.
 - The public auth config never exposes the Clerk secret key or the origin allowlist.
 - Clerk Organizations are not the local authorization authority. Organization membership, roles, and tenant access remain database-owned under ADR-002 and ADR-003.
+- T-401 remains in progress until `ExternalIdentity` removes the temporary Clerk-specific local linkage compatibility path.
