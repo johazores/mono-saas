@@ -4,13 +4,13 @@
 
 **T-1301 · Tenant isolation test suite**
 - **Priority** P0 · **Status** Not started · **Complexity** L · **Depends on** T-303
-- **Notes:** The single most valuable tests in the project. Seed two tenants; assert every repository, every relation include, and every nested write refuses to cross. Treat a failure here as a release blocker.
-- **Acceptance:** Suite exists, runs in CI-equivalent local run, and fails loudly on a deliberately introduced leak.
+- **Notes:** Seed two tenants and assert every repository, relation include, and nested write refuses to cross the boundary. Treat a failure as a release blocker.
+- **Acceptance:** The suite runs against a real test database and fails loudly on a deliberately introduced isolation leak.
 
 **T-1302 · Integration tests**
 - **Priority** P2 · **Status** Not started · **Complexity** L · **Depends on** T-1101
-- **Notes:** 21 suites exist, all unit-level against mocked repositories. Nothing exercises a real route end to end, so the extension in `lib/prisma.ts` — the most security-critical code in the repo — is effectively untested.
-- **Acceptance:** Route-level tests against a test database for auth, checkout, and CMS read paths.
+- **Notes:** Current tests are primarily unit-level with mocked repositories. Add route-level tests against a test database for authentication, checkout, and CMS read paths.
+- **Acceptance:** Auth, checkout, and CMS routes are exercised end to end through their HTTP/controller boundaries.
 
 ---
 
@@ -18,27 +18,46 @@
 
 **T-1401 · Deployment documentation**
 - **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** T-801
-- **Notes:** Two apps, two ports, shared DB. Document the split deploy, health checks, and the bootstrap env surface from T-902.
-- **Acceptance:** A clean deploy is reproducible from the doc alone.
+- **Notes:** Document the two-application deployment, health checks, separate environment databases, administrator application split, and final bootstrap variable surface.
+- **Acceptance:** A clean deployment is reproducible from documentation alone.
 
 **T-1402 · Observability baseline**
 - **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** —
-- **Notes:** Structured logging with tenant and request IDs, error reporting, health endpoints.
-- **Acceptance:** A production error is traceable to tenant, route, and actor.
+- **Notes:** Structured logging with tenant and request IDs, error reporting, and health endpoints.
+- **Acceptance:** A production error is traceable to tenant, route, request, and actor.
 
 **T-1403 · CI (deferred by instruction)**
 - **Priority** P3 · **Status** Blocked · **Complexity** S · **Depends on** —
-- **Notes:** Deliberately deferred per the brief. Until then the `prebuild` test hook is the only automated gate, and merging to `master` without review means a broken push is only caught at build. Worth knowing that is the accepted trade.
-- **Acceptance:** Revisit when the architecture stabilises.
+- **Notes:** Deliberately deferred. The API `prebuild` test hook remains the automated local build gate. No GitHub Actions workflow may be added or modified during active architecture development.
+- **Acceptance:** Revisit only when the architecture is stable and branch-specific workflow rules are agreed.
 
 ---
 
 ### WS-15 · Technical debt
 
-**T-1501 · Remove or document root dependencies** — `P3` · `S` · F-10: `@modelcontextprotocol/sdk` and `zod` at root with no importers. `zod` gets used by T-1101; the MCP SDK needs a justification or removal.
-**T-1502 · Rename root package** — `P3` · `S` · `mono-next` → `mono-saas`.
-**T-1503 · Resolve `app-api/app/`** — `P3` · `S` · Three placeholder files. Becomes the admin shell in T-801 or gets deleted.
-**T-1504 · Rename `lib/secure-credentials.ts`** — `P2` · `S` · Name implies encryption that does not exist. Folded into T-101.
-**T-1505 · Reconcile `AGENTS.md` / `CLAUDE.md`** — `P3` · `S` · Duplicated per app; keep one source and symlink or reference.
+**T-1501 · Remove or document root dependencies**
+- **Priority** P3 · **Status** Done · **Complexity** S · **Depends on** —
+- **Notes:** Removed the unused root `@modelcontextprotocol/sdk` dependency. Moved `zod` to `app-api`, where T-1101 will use it for request validation. The root package now contains orchestration-only development dependencies.
+- **Acceptance:** No unexplained runtime dependency remains at the repository root.
+
+**T-1502 · Rename root package**
+- **Priority** P3 · **Status** Done · **Complexity** S · **Depends on** —
+- **Notes:** Renamed the root package and repository entry point from `mono-next` to `mono-saas`; updated the description and README structure.
+- **Acceptance:** Root package metadata and README use Mono SaaS consistently.
+
+**T-1503 · Resolve `app-api/app/`**
+- **Priority** P3 · **Status** Not started · **Complexity** S · **Depends on** T-801
+- **Notes:** The placeholder App Router files become the administrator shell during T-801 or are removed if the app split decision changes.
+- **Acceptance:** No unexplained placeholder application files remain.
+
+**T-1504 · Rename `lib/secure-credentials.ts`**
+- **Priority** P2 · **Status** Not started · **Complexity** S · **Depends on** —
+- **Notes:** The file validates administrator/member session secrets and does not handle encrypted provider credentials. Rename it to describe session-secret responsibility without missing import call sites.
+- **Acceptance:** The filename and imports accurately describe its responsibility.
+
+**T-1505 · Reconcile `AGENTS.md` / `CLAUDE.md`**
+- **Priority** P3 · **Status** Not started · **Complexity** S · **Depends on** —
+- **Notes:** Keep one authoritative development instruction source and replace duplicated copies with explicit references where supported.
+- **Acceptance:** Development instructions have one maintained source.
 
 ---
