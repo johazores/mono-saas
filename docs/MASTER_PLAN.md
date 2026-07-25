@@ -81,11 +81,12 @@ Resolved or implemented in the current environment guard:
 - JSON data is not generically traversed, so provider/content payloads containing a key named `env` remain untouched;
 - `AsyncLocalStorage` now provides an immutable request-scope contract carrying request ID, deployment environment, future `tenantId`, and resolution source;
 - member login/register/logout/session routes establish request scope before controller work, and `getAppEnv()` uses that request snapshot instead of deployment-global mutable state downstream;
+- configuration-driven subdomain, custom-domain, path-prefix, and signed trusted-header strategies now resolve only untrusted tenant candidate keys;
 - public `x-tenant-id` is deliberately ignored until membership/host resolution is authoritative.
 
 Remaining release blockers for tenant data:
 
-1. The request-scope wrapper still needs adoption across the remaining API route groups and must resolve real tenant membership/host context after T-305.
+1. The request-scope wrapper still needs adoption across the remaining API route groups and must bind candidate keys to real tenant membership/domain context after T-305.
 2. Soft references that are not Prisma relations (`CheckoutSession.userId`, `CheckoutSession.items`, `TaxonomyTerm.parentId`, `Membership.sourceId`, and similar fields) need explicit tenant-aware treatment during T-305.
 3. `basePrisma` bypasses the guard and requires a narrow audited platform-admin boundary.
 4. Real two-tenant route/database integration tests do not exist, so T-301 and T-303 remain in progress rather than done.
@@ -191,7 +192,7 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-0 Decisions | 5 | 5 |
 | WS-1 Security | 7 | 4 |
 | WS-2 Documentation | 5 | 2 |
-| WS-3 Multi-tenancy | 6 | 2 |
+| WS-3 Multi-tenancy | 6 | 3 |
 | WS-4 Authentication | 3 | 2 |
 | WS-5 Authorization | 3 | 0 |
 | WS-6 Team workspace | 3 | 0 |
@@ -204,6 +205,6 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-13 Testing | 2 | 0 |
 | WS-14 Production | 3 | 0 |
 | WS-15 Tech debt | 5 | 3 |
-| **Total** | **60** | **23** |
+| **Total** | **60** | **24** |
 
 `In progress` and externally blocked work is not counted as done. The workstream files contain the authoritative status of each task.
