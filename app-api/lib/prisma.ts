@@ -15,6 +15,7 @@ function createExtendedClient() {
           operation,
           args as Record<string, unknown>,
           env,
+          model,
         );
 
         return query(scopedArgs as typeof args);
