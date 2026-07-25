@@ -51,7 +51,7 @@ export async function purchaseFileDownloadController(
   const file = await purchaseFileService.getById(fileId);
   if (!file) return sendError(res, "File not found.", 404);
 
-  // Verify the user owns this purchase
+  // Verify ownership and purchase status before any signed storage URL exists.
   const purchase = await purchaseRepository.findById(file.purchaseId);
   if (!purchase || purchase.userId !== session.user.id) {
     return sendError(res, "Access denied.", 403);
@@ -61,17 +61,33 @@ export async function purchaseFileDownloadController(
     return sendError(res, "Purchase is not valid for downloads.", 403);
   }
 
-  // Return the base64 data as a downloadable file
-  const buffer = Buffer.from(file.data, "base64");
-  const safeFileName = encodeURIComponent(file.fileName).replace(/[']/g, "_");
+  let access;
+  try {
+    access = await purchaseFileService.getDownloadAccess(file);
+  } catch {
+    return sendError(res, "File is temporarily unavailable.", 503);
+  }
+
   await logActivity(req, "file.download", {
     actor: "user",
     actorId: session.user.id,
     resource: "purchaseFile",
     resourceId: fileId,
-    metadata: { fileName: file.fileName, purchaseId: file.purchaseId },
+    metadata: {
+      fileName: file.fileName,
+      purchaseId: file.purchaseId,
+      delivery: access.kind,
+    },
   });
-  res.setHeader("Content-Type", file.mimeType);
+
+  if (access.kind === "storage") {
+    res.setHeader("Cache-Control", "no-store");
+    return res.redirect(302, access.url);
+  }
+
+  const buffer = Buffer.from(access.data, "base64");
+  const safeFileName = encodeURIComponent(access.fileName).replace(/[']/g, "_");
+  res.setHeader("Content-Type", access.mimeType);
   res.setHeader(
     "Content-Disposition",
     `attachment; filename*=UTF-8''${safeFileName}`,
