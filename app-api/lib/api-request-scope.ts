@@ -3,7 +3,7 @@ import type { NextApiHandler, NextApiRequest } from "next";
 import { getAppEnv } from "@/lib/env";
 import { runWithRequestScope } from "@/lib/request-scope";
 
-function getRequestId(req: NextApiRequest): string {
+export function resolveRequestId(req: NextApiRequest): string {
   const supplied = req.headers["x-request-id"];
   if (typeof supplied === "string" && supplied.trim()) {
     return supplied.trim().slice(0, 128);
@@ -23,11 +23,15 @@ export function withRequestScope<T = unknown>(
   handler: NextApiHandler<T>,
 ): NextApiHandler<T> {
   return async (req, res) => {
-    const env = await getAppEnv();
+    const [env, requestId] = await Promise.all([
+      getAppEnv(),
+      Promise.resolve(resolveRequestId(req)),
+    ]);
+    res.setHeader("X-Request-Id", requestId);
 
     return runWithRequestScope(
       {
-        requestId: getRequestId(req),
+        requestId,
         env,
         source: "deployment",
       },
