@@ -149,3 +149,15 @@ export type {
   ServerLogFields,
   HealthStatus,
 } from "./observability";
+export type {
+  StorageHttpMethod,
+  StorageProviderName,
+  StorageObjectMetadata,
+  SignedStorageUrl,
+  CreateUploadUrlInput,
+  CreateDownloadUrlInput,
+  S3CompatibleStorageConfig,
+  StorageConfig,
+  S3PresignInput,
+  StorageProviderInterface,
+} from "./storage";

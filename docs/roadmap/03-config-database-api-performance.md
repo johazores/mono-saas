@@ -23,7 +23,7 @@
 
 **T-1001 · Object storage provider**
 - **Priority** P1 · **Status** In progress · **Complexity** L · **Depends on** T-005
-- **Notes:** The merged object-storage foundation defines provider-neutral storage contracts and a dependency-free S3 Signature Version 4 adapter for S3/R2-compatible stores. It supports short-lived direct upload/download URLs plus HEAD/delete lifecycle operations so large payloads bypass the Next.js process. Remaining work is encrypted provider configuration, media/purchase-file service integration, authorization before signed downloads, and a real configured object-store test with a file larger than 20 MB.
+- **Notes:** Provider-neutral storage contracts and the dependency-free S3 Signature Version 4 adapter are merged. Storage provider/endpoint/region/bucket/credential settings are now registered; both credential values use the existing encrypted/masked settings boundary. `settingService.getStorageConfig()` adds five-second cached configuration with storage-specific invalidation, and `getStorageProvider()` selects the configured adapter while failing closed when storage is disabled or incomplete. Remaining work is media/purchase-file service integration, ownership/tenant authorization before signed downloads, and a real configured object-store test with a file larger than 20 MB.
 - **Acceptance:** Upload and download work through object storage; a file larger than 20 MB succeeds.
 
 **T-1002 · Migrate base64 rows**
@@ -56,7 +56,7 @@
 
 **T-1201 · Settings and config caching**
 - **Priority** P2 · **Status** Done · **Complexity** S · **Depends on** T-101
-- **Notes:** Authentication, Clerk-security, payment, and site configuration now use five-second in-process async TTL caches. Concurrent misses share one loader; administrator writes invalidate only affected groups. Generation-based invalidation prevents older in-flight reads from repopulating stale values.
+- **Notes:** Authentication, Clerk-security, payment, site, and storage configuration now use five-second in-process async TTL caches. Concurrent misses share one loader; administrator writes invalidate only affected groups. Generation-based invalidation prevents older in-flight reads from repopulating stale values.
 - **Acceptance:** Repeated configuration reads avoid duplicate database calls; tests cover TTL expiry, concurrent deduplication, write invalidation, rejection recovery, and in-flight stale-read protection.
 
 **T-1202 · Session hot-path review**

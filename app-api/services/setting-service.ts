@@ -15,6 +15,8 @@ import type {
   PaymentProviderName,
   PublicPaymentConfig,
   SiteConfig,
+  StorageConfig,
+  StorageProviderName,
   ThemeTokens,
 } from "@/types";
 
@@ -69,6 +71,47 @@ function validateAuthorizedParties(value: unknown): string[] {
   }
 
   return parties;
+}
+
+function validateStorageEndpoint(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("storage.s3.endpoint must be a URL origin.");
+  }
+
+  const raw = value.trim().replace(/\/$/, "");
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("storage.s3.endpoint must be a valid URL origin.");
+  }
+
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.origin !== raw
+  ) {
+    throw new Error(
+      "storage.s3.endpoint must be an HTTP(S) origin without a path or query.",
+    );
+  }
+
+  return raw;
+}
+
+function optionalStorageString(
+  map: Map<string, unknown>,
+  key: string,
+): string {
+  const value = map.get(key);
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function requireStorageString(map: Map<string, unknown>, key: string): string {
+  const value = optionalStorageString(map, key);
+  if (!value) {
+    throw new Error(`Storage setting ${key} is required.`);
+  }
+  return value;
 }
 
 async function loadAuthConfig(): Promise<AuthConfig> {
@@ -138,6 +181,40 @@ async function loadPaymentConfig(): Promise<PaymentConfig> {
   return { provider, mode, publicKey, secretKey };
 }
 
+async function loadStorageConfig(): Promise<StorageConfig | null> {
+  const records = await settingRepository.getMany([
+    "storage.provider",
+    "storage.s3.endpoint",
+    "storage.s3.region",
+    "storage.s3.bucket",
+    "storage.s3.accessKeyId",
+    "storage.s3.secretAccessKey",
+  ]);
+  const map = new Map(records.map((record) => [record.key, record.value]));
+  const provider = optionalStorageString(map, "storage.provider");
+  if (!provider) return null;
+
+  if (provider !== "s3-compatible") {
+    throw new Error(`Unsupported storage provider: ${provider}`);
+  }
+
+  return {
+    provider,
+    s3: {
+      endpoint: validateStorageEndpoint(
+        requireStorageString(map, "storage.s3.endpoint"),
+      ),
+      region: requireStorageString(map, "storage.s3.region"),
+      bucket: requireStorageString(map, "storage.s3.bucket"),
+      accessKeyId: requireStorageString(map, "storage.s3.accessKeyId"),
+      secretAccessKey: requireStorageString(
+        map,
+        "storage.s3.secretAccessKey",
+      ),
+    },
+  };
+}
+
 async function loadSiteConfig(): Promise<SiteConfig> {
   const records = await settingRepository.getAll();
   const map = new Map(records.map((record) => [record.key, record.value]));
@@ -170,6 +247,10 @@ const paymentConfigCache = createAsyncTtlCache(
   loadPaymentConfig,
   CONFIG_CACHE_MS,
 );
+const storageConfigCache = createAsyncTtlCache(
+  loadStorageConfig,
+  CONFIG_CACHE_MS,
+);
 const siteConfigCache = createAsyncTtlCache(loadSiteConfig, CONFIG_CACHE_MS);
 
 function invalidateConfigCaches(key?: string): void {
@@ -179,6 +260,9 @@ function invalidateConfigCaches(key?: string): void {
   }
   if (!key || key.startsWith("payment.")) {
     paymentConfigCache.invalidate();
+  }
+  if (!key || key.startsWith("storage.")) {
+    storageConfigCache.invalidate();
   }
   if (!key || key.startsWith("site.") || key.startsWith("theme.")) {
     siteConfigCache.invalidate();
@@ -241,6 +325,27 @@ export const settingService = {
       }
     }
 
+    if (key === "storage.provider") {
+      const valid: StorageProviderName[] = ["s3-compatible"];
+      if (!valid.includes(value as StorageProviderName)) {
+        throw new Error(
+          `Invalid storage provider. Must be one of: ${valid.join(", ")}`,
+        );
+      }
+    }
+
+    if (key === "storage.s3.endpoint" && value !== "") {
+      value = validateStorageEndpoint(value);
+    }
+
+    if (
+      key.startsWith("storage.s3.") &&
+      key !== "storage.s3.endpoint" &&
+      typeof value !== "string"
+    ) {
+      throw new Error(`${key} must be a string.`);
+    }
+
     if (key.startsWith("theme.") && typeof value === "string" && value !== "") {
       const isGradient = key.endsWith("Gradient");
       if (!isGradient && !/^#[0-9a-fA-F]{6}$/.test(value)) {
@@ -289,6 +394,10 @@ export const settingService = {
       mode: config.mode,
       publicKey: config.publicKey,
     };
+  },
+
+  async getStorageConfig(): Promise<StorageConfig | null> {
+    return storageConfigCache.get();
   },
 
   async getSiteConfig(): Promise<SiteConfig> {
