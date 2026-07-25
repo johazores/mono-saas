@@ -18,6 +18,21 @@ const SESSION_SECONDS = SESSION_DAYS * 24 * 60 * 60;
 const IMPERSONATION_SECONDS = 60 * 60;
 const CLOCK_SKEW_SECONDS = 60;
 
+const ACTIVE_PLAN_FILTER = {
+  status: "active",
+  product: { paymentModel: "recurring" },
+} as const;
+
+const ACTIVE_PLAN_SELECT = {
+  endDate: true,
+  product: {
+    select: {
+      name: true,
+      slug: true,
+    },
+  },
+} as const;
+
 function sessionExpiry(maxAgeSeconds: number) {
   return new Date(Date.now() + maxAgeSeconds * 1000);
 }
@@ -79,7 +94,7 @@ async function getProviderUserSession(
   );
   if (!user || user.status !== "active") return null;
 
-  return buildUserAuthSession(user);
+  return buildUserAuthSession(user.id);
 }
 
 export async function getUserSession(
@@ -111,45 +126,51 @@ export async function getUserSession(
   return getProviderUserSession(req, authConfig.provider);
 }
 
-async function buildUserAuthSession(user: {
-  id: string;
-  name: string;
-  email: string;
-  status: string;
-  parentId: string | null;
-}): Promise<UserAuthSession> {
-  let activeSub = await prisma.purchase.findFirst({
-    where: {
-      userId: user.id,
-      status: "active",
-      product: { paymentModel: "recurring" },
+/**
+ * Build the local member session with one Prisma query boundary.
+ *
+ * The query loads the user, the latest active recurring purchase, optional
+ * parent details, and the parent's latest active recurring purchase together.
+ * This replaces the former chain of up to three enrichment queries.
+ */
+async function buildUserAuthSession(
+  userId: string,
+): Promise<UserAuthSession | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      status: true,
+      parentId: true,
+      purchases: {
+        where: ACTIVE_PLAN_FILTER,
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: ACTIVE_PLAN_SELECT,
+      },
+      parent: {
+        select: {
+          name: true,
+          email: true,
+          purchases: {
+            where: ACTIVE_PLAN_FILTER,
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: ACTIVE_PLAN_SELECT,
+          },
+        },
+      },
     },
-    include: { product: { select: { name: true, slug: true } } },
-    orderBy: { createdAt: "desc" },
   });
 
-  if (!activeSub && user.parentId) {
-    activeSub = await prisma.purchase.findFirst({
-      where: {
-        userId: user.parentId,
-        status: "active",
-        product: { paymentModel: "recurring" },
-      },
-      include: { product: { select: { name: true, slug: true } } },
-      orderBy: { createdAt: "desc" },
-    });
-  }
+  if (!user || user.status !== "active") return null;
 
-  let parentInfo: { name: string; email: string } | null = null;
-  if (user.parentId) {
-    const parentUser = await prisma.user.findUnique({
-      where: { id: user.parentId },
-      select: { name: true, email: true },
-    });
-    if (parentUser) {
-      parentInfo = { name: parentUser.name, email: parentUser.email };
-    }
-  }
+  const activeSub = user.purchases[0] ?? user.parent?.purchases[0] ?? null;
+  const parentInfo = user.parent
+    ? { name: user.parent.name, email: user.parent.email }
+    : null;
 
   return {
     user: {
