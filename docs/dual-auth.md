@@ -5,7 +5,7 @@
 - **Related decision:** ADR-003
 - **Roadmap:** T-401 through T-403
 
-The application supports two member authentication providers, configurable at runtime through the administrator settings panel. Member verification now uses a provider-neutral registry. Administrator authentication remains a separate credentials-based context pending T-403.
+The application supports two member authentication providers, configurable at runtime through the administrator settings panel. Member verification uses a provider-neutral registry. Administrator authentication remains a separate platform credentials context, but its session verification now implements the same provider contract.
 
 ## Providers
 
@@ -63,7 +63,7 @@ export interface AuthProviderInterface {
 }
 ```
 
-Provider SDKs and transport-specific verification remain inside adapters. The shared session dispatcher receives only `VerifiedIdentity`.
+Provider SDKs and transport-specific verification remain inside adapters. Shared member and administrator session code receives only `VerifiedIdentity`; local authorization is applied afterward.
 
 ## Configuration
 
@@ -107,11 +107,14 @@ The `User.clerkId` resolver is explicitly temporary. T-305 replaces it with `Ext
 ### API (`app-api`)
 
 - **`lib/auth/types.ts`** — provider-neutral request, identity, profile, and provider interface.
-- **`lib/auth/index.ts`** — provider registry plus local identity-resolver registration.
-- **`lib/auth/credential-provider.ts`** — verifies local credential sessions and returns neutral identity.
+- **`lib/auth/index.ts`** — member provider registry plus local identity-resolver registration.
+- **`lib/auth/credential-provider.ts`** — verifies local member credential sessions and returns neutral identity.
 - **`lib/auth/clerk-provider.ts`** — maps Clerk verification/profile capability into the neutral contract.
-- **`lib/auth/identity-resolver.ts`** — local account linkage/provisioning; contains the temporary `User.clerkId` compatibility resolver.
-- **`lib/user-auth.ts`** — selects a registry entry, verifies identity, resolves the local user, enforces active account state, and builds the application session. It no longer imports Clerk verification/profile functions or branches directly between provider implementations.
+- **`lib/auth/identity-resolver.ts`** — local member account linkage/provisioning; contains the temporary `User.clerkId` compatibility resolver.
+- **`lib/auth/admin-credentials-provider.ts`** — verifies the seven-day administrator session and returns neutral identity without deciding account status or role access.
+- **`lib/auth/admin-registry.ts`** — separate platform-administrator provider registry.
+- **`lib/user-auth.ts`** — selects a member registry entry, verifies identity, resolves the local user, enforces active account state, and builds the application session.
+- **`lib/admin-auth.ts`** — verifies through the administrator registry, then enforces active administrator state and role authorization. Disabled presented sessions are revoked.
 - **`lib/clerk-auth.ts`** — low-level Clerk JWT/profile integration used only by the Clerk adapter and compatibility tests.
 - **`services/setting-service.ts`** — typed authentication and Clerk-security configuration.
 - **`repositories/invitation-repository.ts`** — local invitation lifecycle.
@@ -125,11 +128,18 @@ The `User.clerkId` resolver is explicitly temporary. T-305 replaces it with `Ext
 
 ## Administrator authentication
 
-Administrator authentication remains password/session based and is not changed by switching the member provider.
+Administrator login remains password based and administrator sessions remain seven days by default. Switching the member provider does not alter platform-admin authentication.
 
-Impersonation is limited to one hour, creates a target credentials session with the same lifetime, validates that the administrator remains active, requires the target user in the signed impersonation payload to match that session, and logs start/stop actions.
+The administrator session is now verified by `adminCredentialsAuthProvider`, which implements the same `AuthProviderInterface` used by member adapters. The contexts stay deliberately separate:
 
-T-403 moves administrator credentials behind the same verification contract while preserving a separate platform-administrator authorization context.
+- provider verification proves which administrator session is present;
+- `admin-auth.ts` decides whether the local administrator is active;
+- `requireAdmin()` applies the allowed platform roles;
+- administrator identities are never auto-provisioned from external tokens.
+
+Impersonation is limited to one hour, creates a target member credentials session with the same lifetime, validates that the administrator remains active, requires the target user in the signed impersonation payload to match that session, and logs start/stop actions.
+
+T-403 is complete. T-503 later replaces free-string administrator role comparisons with the real authorization model.
 
 ## Important notes
 
