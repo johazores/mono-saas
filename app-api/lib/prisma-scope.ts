@@ -19,18 +19,59 @@ const OPERATIONS_ALLOWING_EMPTY_WHERE = new Set([
 
 type UnknownRecord = Record<string, unknown>;
 
+type RelationMeta = {
+  targetModel: string;
+  isList: boolean;
+  isRequired: boolean;
+};
+
+const MODEL_RELATIONS = new Map(
+  Prisma.dmmf.datamodel.models.map((model) => [
+    model.name,
+    new Map(
+      model.fields
+        .filter((field) => field.kind === "object")
+        .map((field) => [
+          field.name,
+          {
+            targetModel: field.type,
+            isList: field.isList,
+            isRequired: field.isRequired,
+          } satisfies RelationMeta,
+        ]),
+    ),
+  ]),
+);
+
 function isRecord(value: unknown): value is UnknownRecord {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [value];
+}
+
+function appendAnd(where: UnknownRecord, conditions: UnknownRecord[]): void {
+  if (conditions.length === 0) return;
+
+  const existing = where.AND;
+  if (Array.isArray(existing)) {
+    existing.push(...conditions);
+    return;
+  }
+
+  if (existing !== undefined) {
+    where.AND = [existing, ...conditions];
+    return;
+  }
+
+  where.AND = conditions;
 }
 
 /**
  * Replace every explicitly supplied `env` value inside a where tree.
  * This covers top-level filters, logical operators, relation filters, and
  * compound unique selectors such as `env_email` or `env_key`.
- *
- * It intentionally does not add missing scope to arbitrary nested objects;
- * Prisma filter objects and JSON filters are indistinguishable at runtime.
- * Full nested relation isolation remains a separate tenancy task.
  */
 function overwriteExplicitEnv(value: unknown, env: string): void {
   if (Array.isArray(value)) {
@@ -52,6 +93,211 @@ function setTopLevelEnv(value: unknown, env: string): void {
   if (isRecord(value)) value.env = env;
 }
 
+function scopeUniqueSelector(value: unknown, env: string): void {
+  for (const selector of asArray(value)) {
+    if (!isRecord(selector)) continue;
+    overwriteExplicitEnv(selector, env);
+    selector.env = env;
+  }
+}
+
+function scopeCreateData(model: string, value: unknown, env: string): void {
+  for (const item of asArray(value)) {
+    if (!isRecord(item)) continue;
+    if (isEnvScopedModel(model)) item.env = env;
+    scopeNestedWrites(model, item, env);
+  }
+}
+
+function scopeUpdateData(model: string, value: unknown, env: string): void {
+  for (const item of asArray(value)) {
+    if (!isRecord(item)) continue;
+
+    // Nested update can be either direct data for to-one relations or
+    // { where, data } for list relations.
+    if (isRecord(item.data)) {
+      if (isRecord(item.where)) scopeUniqueSelector(item.where, env);
+      if (isEnvScopedModel(model)) item.data.env = env;
+      scopeNestedWrites(model, item.data, env);
+      continue;
+    }
+
+    if (isEnvScopedModel(model)) item.env = env;
+    scopeNestedWrites(model, item, env);
+  }
+}
+
+function scopeNestedWrites(model: string, data: UnknownRecord, env: string): void {
+  const relations = MODEL_RELATIONS.get(model);
+  if (!relations) return;
+
+  for (const [fieldName, relation] of relations) {
+    const nested = data[fieldName];
+    if (!isRecord(nested)) continue;
+
+    const target = relation.targetModel;
+    const targetScoped = isEnvScopedModel(target);
+
+    if (nested.create !== undefined) {
+      scopeCreateData(target, nested.create, env);
+    }
+
+    if (isRecord(nested.createMany) && nested.createMany.data !== undefined) {
+      scopeCreateData(target, nested.createMany.data, env);
+    }
+
+    if (targetScoped) {
+      if (nested.connect !== undefined) {
+        scopeUniqueSelector(nested.connect, env);
+      }
+      if (nested.set !== undefined) {
+        scopeUniqueSelector(nested.set, env);
+      }
+      if (nested.disconnect !== undefined && nested.disconnect !== true) {
+        scopeUniqueSelector(nested.disconnect, env);
+      }
+      if (nested.delete !== undefined && nested.delete !== true) {
+        scopeUniqueSelector(nested.delete, env);
+      }
+      if (nested.deleteMany !== undefined) {
+        for (const where of asArray(nested.deleteMany)) {
+          if (!isRecord(where)) continue;
+          overwriteExplicitEnv(where, env);
+          where.env = env;
+        }
+      }
+    }
+
+    if (nested.connectOrCreate !== undefined) {
+      for (const item of asArray(nested.connectOrCreate)) {
+        if (!isRecord(item)) continue;
+        if (targetScoped && isRecord(item.where)) scopeUniqueSelector(item.where, env);
+        if (item.create !== undefined) scopeCreateData(target, item.create, env);
+      }
+    }
+
+    if (nested.update !== undefined) {
+      scopeUpdateData(target, nested.update, env);
+    }
+
+    if (nested.updateMany !== undefined) {
+      for (const item of asArray(nested.updateMany)) {
+        if (!isRecord(item)) continue;
+        if (targetScoped && isRecord(item.where)) {
+          overwriteExplicitEnv(item.where, env);
+          item.where.env = env;
+        }
+        if (isRecord(item.data)) {
+          if (targetScoped) item.data.env = env;
+          scopeNestedWrites(target, item.data, env);
+        }
+      }
+    }
+
+    if (nested.upsert !== undefined) {
+      for (const item of asArray(nested.upsert)) {
+        if (!isRecord(item)) continue;
+        if (targetScoped && isRecord(item.where)) scopeUniqueSelector(item.where, env);
+        if (item.create !== undefined) scopeCreateData(target, item.create, env);
+        if (item.update !== undefined) scopeUpdateData(target, item.update, env);
+      }
+    }
+  }
+}
+
+/**
+ * Scope relation selections using schema-derived relation metadata.
+ *
+ * List relations can carry their own `where`, so they are filtered directly.
+ * To-one relations cannot always carry a nested `where`; instead this returns
+ * parent-query conditions that require the selected relation to be in the
+ * active scope (or null when the relation is optional).
+ */
+function scopeSelection(
+  model: string,
+  selection: UnknownRecord,
+  env: string,
+): UnknownRecord[] {
+  const relations = MODEL_RELATIONS.get(model);
+  if (!relations) return [];
+
+  const parentConditions: UnknownRecord[] = [];
+
+  for (const [fieldName, relation] of relations) {
+    const selected = selection[fieldName];
+    if (selected === undefined || selected === false) continue;
+
+    const target = relation.targetModel;
+    const targetScoped = isEnvScopedModel(target);
+    let nestedArgs: UnknownRecord | null = isRecord(selected) ? selected : null;
+
+    if (relation.isList) {
+      if (selected === true) {
+        nestedArgs = {};
+        selection[fieldName] = nestedArgs;
+      }
+
+      if (!nestedArgs) continue;
+      if (!isRecord(nestedArgs.where)) nestedArgs.where = {};
+
+      const nestedWhere = nestedArgs.where as UnknownRecord;
+      if (targetScoped) {
+        overwriteExplicitEnv(nestedWhere, env);
+        nestedWhere.env = env;
+      }
+
+      const childConditions = scopeNestedSelections(target, nestedArgs, env);
+      appendAnd(nestedWhere, childConditions);
+      continue;
+    }
+
+    const childConditions = nestedArgs
+      ? scopeNestedSelections(target, nestedArgs, env)
+      : [];
+
+    if (!targetScoped && childConditions.length === 0) continue;
+
+    const targetFilter: UnknownRecord = {};
+    if (targetScoped) targetFilter.env = env;
+    appendAnd(targetFilter, childConditions);
+
+    const relationMatches = {
+      [fieldName]: { is: targetFilter },
+    } as UnknownRecord;
+
+    if (relation.isRequired) {
+      parentConditions.push(relationMatches);
+    } else {
+      parentConditions.push({
+        OR: [
+          { [fieldName]: { is: null } },
+          relationMatches,
+        ],
+      });
+    }
+  }
+
+  return parentConditions;
+}
+
+function scopeNestedSelections(
+  model: string,
+  args: UnknownRecord,
+  env: string,
+): UnknownRecord[] {
+  const conditions: UnknownRecord[] = [];
+
+  if (isRecord(args.include)) {
+    conditions.push(...scopeSelection(model, args.include, env));
+  }
+
+  if (isRecord(args.select)) {
+    conditions.push(...scopeSelection(model, args.select, env));
+  }
+
+  return conditions;
+}
+
 export function isEnvScopedModel(model: string | undefined): boolean {
   return !!model && ENV_SCOPED_MODEL_NAMES.has(model);
 }
@@ -63,11 +309,15 @@ export function getEnvScopedModelNames(): string[] {
 /**
  * Apply the current deployment-wide environment guard to Prisma arguments.
  * The active environment always wins over caller-provided values.
+ *
+ * `model` is optional for backwards-compatible unit use. Supplying it enables
+ * schema-aware nested relation read/write enforcement.
  */
 export function applyEnvScope(
   operation: string,
   args: UnknownRecord,
   env: string,
+  model?: string,
 ): UnknownRecord {
   if (
     OPERATIONS_ALLOWING_EMPTY_WHERE.has(operation) &&
@@ -96,6 +346,28 @@ export function applyEnvScope(
   if (operation === "upsert") {
     setTopLevelEnv(args.create, env);
     setTopLevelEnv(args.update, env);
+  }
+
+  if (!model) return args;
+
+  if (operation === "create" || operation === "update" || operation === "updateMany") {
+    if (isRecord(args.data)) scopeNestedWrites(model, args.data, env);
+  }
+
+  if (operation === "createMany") {
+    for (const item of asArray(args.data)) {
+      if (isRecord(item)) scopeNestedWrites(model, item, env);
+    }
+  }
+
+  if (operation === "upsert") {
+    if (isRecord(args.create)) scopeNestedWrites(model, args.create, env);
+    if (isRecord(args.update)) scopeNestedWrites(model, args.update, env);
+  }
+
+  const relationConditions = scopeNestedSelections(model, args, env);
+  if (relationConditions.length > 0 && isRecord(args.where)) {
+    appendAnd(args.where, relationConditions);
   }
 
   return args;
