@@ -103,11 +103,11 @@ Remaining work:
 
 **F-5 — Clerk sessions performed a profile network request on every authenticated request. `P1` — Resolved**
 
-Returning linked users now resolve from the verified provider subject and local database. Profile retrieval occurs only when a new identity needs linking/provisioning and required claims are absent; the fallback is cached.
+Returning linked users now resolve from the verified provider subject and local database. Profile retrieval occurs only when a new identity needs linking/provisioning and required claims are absent; the fallback is cached. Member and administrator session verification now both implement the ADR-003 `AuthProviderInterface`; administrator account state and role checks remain local and separate.
 
 **F-6 — Clerk auto-provisioning was open and incompletely scoped. `P1` — Resolved**
 
-Clerk verification now requires authorized frontend origins. New local accounts require an unexpired invitation unless open signup is explicitly enabled. Provider-subject lookup includes explicit current scope, and existing identity links are not reassigned automatically.
+Clerk verification now requires authorized frontend origins. New local accounts require an unexpired invitation unless open signup is explicitly enabled. Provider-subject lookup includes explicit current scope, and existing identity links are not reassigned automatically. The remaining Clerk-specific `User.clerkId` compatibility resolver is isolated pending T-305 `ExternalIdentity` migration.
 
 **F-7 — Binary files live in MongoDB as base64. `P1` — Decision resolved, implementation open**
 
@@ -175,7 +175,7 @@ Detailed tasks, dependencies, notes, and acceptance criteria are split into focu
 3. **T-305 + T-1301** — migrate the schema, convert soft references, and prove two-tenant isolation.
 4. **T-501 + T-502** — implement permission model and controller policy layer.
 5. **T-601 + T-602** — implement tenant workspace models and invitation flow.
-6. **T-401 + T-403** — finish the provider-neutral authentication registry for member and administrator contexts.
+6. **Finish T-401** — replace the temporary Clerk subject linkage with `ExternalIdentity`; T-403 administrator provider integration is complete.
 7. **T-702 + T-705** — remove provider fields from the billing schema and add authoritative webhooks. T-701 is complete.
 8. **T-1001 + T-1002** — implement object storage and remove base64 payload columns.
 9. **T-801 + T-802** — move administrator presentation into `app-api` and extract shared UI.
@@ -192,7 +192,7 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-1 Security | 7 | 4 |
 | WS-2 Documentation | 5 | 2 |
 | WS-3 Multi-tenancy | 6 | 2 |
-| WS-4 Authentication | 3 | 1 |
+| WS-4 Authentication | 3 | 2 |
 | WS-5 Authorization | 3 | 0 |
 | WS-6 Team workspace | 3 | 0 |
 | WS-7 Billing | 5 | 1 |
@@ -204,6 +204,6 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-13 Testing | 2 | 0 |
 | WS-14 Production | 3 | 0 |
 | WS-15 Tech debt | 5 | 2 |
-| **Total** | **60** | **20** |
+| **Total** | **60** | **21** |
 
 `In progress` and externally blocked work is not counted as done. The workstream files contain the authoritative status of each task.

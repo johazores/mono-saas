@@ -47,8 +47,8 @@
 - **Acceptance:** Authenticated requests make zero outbound profile calls in the common path; fallback profile calls are cached and covered by tests.
 
 **T-403 · Admin auth behind the same interface**
-- **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** T-401
-- **Notes:** Administrator credentials remain the default but move behind the provider interface. Administrator and member contexts keep separate authorization models.
+- **Priority** P2 · **Status** Done · **Complexity** M · **Depends on** T-401
+- **Notes:** Administrator credentials now use `adminCredentialsAuthProvider`, which implements the same `AuthProviderInterface` as member providers. A separate administrator registry preserves the platform-admin context. Provider verification proves the session identity only; active-account state and role authorization remain in `admin-auth.ts`. Expired and disabled presented sessions are revoked, and the existing seven-day session lifetime is unchanged.
 - **Acceptance:** Administrator and member verification share the provider boundary; administrator behavior remains unchanged.
 
 ---
