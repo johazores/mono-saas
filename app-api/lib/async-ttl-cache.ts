@@ -6,8 +6,9 @@ export type AsyncTtlCache<T> = {
 /**
  * Small in-process cache for configuration reads.
  *
- * Concurrent misses share one loader promise. Rejections are never cached, and
- * explicit invalidation clears both the value and its expiry immediately.
+ * Concurrent misses share one loader promise. Rejections are never cached.
+ * Invalidation advances a generation so an older in-flight load cannot restore
+ * stale data after an administrator writes new configuration.
  */
 export function createAsyncTtlCache<T>(
   loader: () => Promise<T>,
@@ -17,6 +18,7 @@ export function createAsyncTtlCache<T>(
   let hasValue = false;
   let expiresAt = 0;
   let inflight: Promise<T> | null = null;
+  let generation = 0;
 
   return {
     async get(): Promise<T> {
@@ -24,21 +26,27 @@ export function createAsyncTtlCache<T>(
       if (hasValue && now < expiresAt) return value as T;
       if (inflight) return inflight;
 
-      inflight = loader()
+      const loadGeneration = generation;
+      let pending: Promise<T>;
+      pending = loader()
         .then((loaded) => {
-          value = loaded;
-          hasValue = true;
-          expiresAt = Date.now() + ttlMs;
+          if (generation === loadGeneration) {
+            value = loaded;
+            hasValue = true;
+            expiresAt = Date.now() + ttlMs;
+          }
           return loaded;
         })
         .finally(() => {
-          inflight = null;
+          if (inflight === pending) inflight = null;
         });
+      inflight = pending;
 
-      return inflight;
+      return pending;
     },
 
     invalidate(): void {
+      generation += 1;
       value = undefined;
       hasValue = false;
       expiresAt = 0;
