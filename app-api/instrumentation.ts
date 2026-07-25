@@ -1,6 +1,5 @@
 import type { Instrumentation } from "next";
 import { validateBootstrapEnv } from "@/lib/bootstrap-env";
-import { serverLogger } from "@/lib/server-logger";
 
 export function register(): void {
   validateBootstrapEnv();
@@ -11,6 +10,9 @@ export const onRequestError: Instrumentation.onRequestError = async (
   request,
   context,
 ) => {
+  if (process.env.NEXT_RUNTIME === "edge") return;
+
+  const { serverLogger } = await import("@/lib/server-logger");
   const suppliedRequestId = request.headers["x-request-id"];
   const requestId = Array.isArray(suppliedRequestId)
     ? suppliedRequestId[0]
