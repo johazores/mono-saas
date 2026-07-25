@@ -2,21 +2,19 @@ import crypto from "crypto";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { sendError } from "@/lib/api-response";
-import { getSessionSecret } from "@/lib/secure-credentials";
+import {
+  ADMIN_SESSION_COOKIE,
+  hashAdminSessionToken,
+} from "@/lib/auth/admin-credentials-provider";
+import { getAdminAuthProvider } from "@/lib/auth/admin-registry";
+import { toAuthRequest } from "@/lib/auth/request";
 import type { Role, AccountStatus, AuthSession } from "@/types";
 
-const COOKIE_NAME = "admin_session";
 const SESSION_DAYS = 7;
-
-function hashToken(token: string) {
-  return crypto
-    .createHmac("sha256", getSessionSecret())
-    .update(token)
-    .digest("hex");
-}
+const SESSION_SECONDS = SESSION_DAYS * 24 * 60 * 60;
 
 function sessionExpiry() {
-  return new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+  return new Date(Date.now() + SESSION_SECONDS * 1000);
 }
 
 function cookieOptions(maxAge: number) {
@@ -24,12 +22,50 @@ function cookieOptions(maxAge: number) {
   return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge};${secure}`;
 }
 
+function readLocalAdminClaim(value: unknown): {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: string;
+} | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const admin = value as Record<string, unknown>;
+
+  if (
+    typeof admin.id !== "string" ||
+    typeof admin.name !== "string" ||
+    typeof admin.email !== "string" ||
+    typeof admin.role !== "string" ||
+    typeof admin.status !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    id: admin.id,
+    name: admin.name,
+    email: admin.email,
+    role: admin.role,
+    status: admin.status,
+  };
+}
+
+async function revokePresentedAdminSession(req: NextApiRequest): Promise<void> {
+  const token = req.cookies[ADMIN_SESSION_COOKIE];
+  if (!token) return;
+
+  await prisma.adminSession.deleteMany({
+    where: { tokenHash: hashAdminSessionToken(token) },
+  });
+}
+
 export async function createAdminSession(
   adminId: string,
   res: NextApiResponse,
 ) {
   const token = crypto.randomBytes(32).toString("base64url");
-  const tokenHash = hashToken(token);
+  const tokenHash = hashAdminSessionToken(token);
 
   await prisma.adminSession.create({
     data: { adminId, tokenHash, expiresAt: sessionExpiry() },
@@ -37,7 +73,7 @@ export async function createAdminSession(
 
   res.setHeader(
     "Set-Cookie",
-    `${COOKIE_NAME}=${token}; ${cookieOptions(SESSION_DAYS * 24 * 60 * 60)}`,
+    `${ADMIN_SESSION_COOKIE}=${token}; ${cookieOptions(SESSION_SECONDS)}`,
   );
 }
 
@@ -45,46 +81,36 @@ export async function clearAdminSession(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const token = req.cookies[COOKIE_NAME];
-  if (token) {
-    await prisma.adminSession.deleteMany({
-      where: { tokenHash: hashToken(token) },
-    });
-  }
-  res.setHeader("Set-Cookie", `${COOKIE_NAME}=; ${cookieOptions(0)}`);
+  await revokePresentedAdminSession(req);
+  res.setHeader(
+    "Set-Cookie",
+    `${ADMIN_SESSION_COOKIE}=; ${cookieOptions(0)}`,
+  );
 }
 
 export async function getAuthSession(
   req: NextApiRequest,
 ): Promise<AuthSession | null> {
-  const token = req.cookies[COOKIE_NAME];
-  if (!token) return null;
+  const identity = await getAdminAuthProvider().verify(toAuthRequest(req));
+  if (!identity) return null;
 
-  const session = await prisma.adminSession.findUnique({
-    where: { tokenHash: hashToken(token) },
-    include: { admin: true },
-  });
+  const admin = readLocalAdminClaim(identity.claims.localAdmin);
+  if (!admin || admin.id !== identity.subject) return null;
 
-  if (
-    !session ||
-    session.expiresAt < new Date() ||
-    session.admin.status !== "active"
-  ) {
-    if (session) {
-      await prisma.adminSession.deleteMany({
-        where: { tokenHash: hashToken(token) },
-      });
-    }
+  // Provider verification proves the session identity; local account state is
+  // still authoritative for platform-administrator access.
+  if (admin.status !== "active") {
+    await revokePresentedAdminSession(req);
     return null;
   }
 
   return {
     admin: {
-      id: session.admin.id,
-      name: session.admin.name,
-      email: session.admin.email,
-      role: session.admin.role as Role,
-      status: session.admin.status as AccountStatus,
+      id: admin.id,
+      name: admin.name,
+      email: admin.email,
+      role: admin.role as Role,
+      status: admin.status as AccountStatus,
     },
   };
 }
