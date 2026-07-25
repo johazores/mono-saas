@@ -4,6 +4,11 @@ import { getUserSession } from "@/lib/user-auth";
 import { checkoutService } from "@/services/checkout-service";
 import { logActivity } from "@/lib/activity-logger";
 import { verifyCsrf } from "@/lib/csrf";
+import { parseRequestBody } from "@/lib/request-validation";
+import {
+  checkoutRequestSchema,
+  checkoutVerifyRequestSchema,
+} from "@/lib/request-schemas";
 
 export async function checkoutController(
   req: NextApiRequest,
@@ -21,29 +26,10 @@ export async function checkoutController(
 
   if (!verifyCsrf(req, res)) return;
 
-  const { items, successUrl, cancelUrl } = req.body ?? {};
+  const input = parseRequestBody(res, checkoutRequestSchema, req.body);
+  if (!input) return;
 
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    return sendError(res, "Items array is required.", 400);
-  }
-
-  if (!successUrl || !cancelUrl) {
-    return sendError(res, "successUrl and cancelUrl are required.", 400);
-  }
-
-  // Validate each item
-  for (const item of items) {
-    if (!item.productId) {
-      return sendError(res, "Each item must have a productId.", 400);
-    }
-    if (!item.quantity || item.quantity < 1) {
-      return sendError(
-        res,
-        "Each item must have a quantity of at least 1.",
-        400,
-      );
-    }
-  }
+  const { items, successUrl, cancelUrl } = input;
 
   // Check for authenticated user (optional — guest checkout allowed)
   const session = await getUserSession(req);
@@ -85,10 +71,10 @@ export async function checkoutVerifyController(
 
   if (!verifyCsrf(req, res)) return;
 
-  const { sessionId } = req.body ?? {};
-  if (!sessionId || typeof sessionId !== "string") {
-    return sendError(res, "sessionId is required.", 400);
-  }
+  const input = parseRequestBody(res, checkoutVerifyRequestSchema, req.body);
+  if (!input) return;
+
+  const { sessionId } = input;
 
   try {
     const result = await checkoutService.verifySession(sessionId);

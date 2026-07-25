@@ -41,8 +41,8 @@
 ### WS-11 · API layer
 
 **T-1101 · Request validation**
-- **Priority** P1 · **Status** Not started · **Complexity** M · **Depends on** —
-- **Notes:** `zod` is available in `app-api`. Validate at the controller boundary so services can trust their inputs.
+- **Priority** P1 · **Status** In progress · **Complexity** M · **Depends on** —
+- **Notes:** `lib/request-validation.ts` now provides a shared Zod controller-boundary parser that returns stable `400` responses with field-level issue paths. Shared schemas cover administrator/member login, member registration, checkout creation, and checkout verification. Those controllers now pass only parsed/normalized data to services; malformed requests stop before auth, user-creation, or payment service calls. Remaining work is to migrate every other mutating controller before marking the task complete.
 - **Acceptance:** Every mutating route validates its body; malformed input returns 400 with field details.
 
 **T-1102 · Route conventions audit**

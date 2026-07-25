@@ -12,6 +12,11 @@ import { checkRateLimit, USER_LOGIN_LIMIT } from "@/lib/rate-limiter";
 import { logActivity } from "@/lib/activity-logger";
 import { verifyCsrf } from "@/lib/csrf";
 import { getClientIp } from "@/lib/request-utils";
+import { parseRequestBody } from "@/lib/request-validation";
+import {
+  loginRequestSchema,
+  registrationRequestSchema,
+} from "@/lib/request-schemas";
 
 async function requireCredentialProvider(
   res: NextApiResponse,
@@ -56,23 +61,16 @@ export async function userLoginController(
     return;
   }
 
-  const { email, password } = req.body ?? {};
+  const input = parseRequestBody(res, loginRequestSchema, req.body);
+  if (!input) return;
 
-  if (
-    !email ||
-    typeof email !== "string" ||
-    !password ||
-    typeof password !== "string"
-  ) {
-    sendError(res, "Email and password are required.", 400);
-    return;
-  }
+  const { email, password } = input;
 
   try {
     const user = await userService.authenticate(email, password);
     await createUserSession(user.id, res);
 
-    // Sync Stripe data in background (non-blocking)
+    // Sync billing data in background (non-blocking)
     billingService.syncInBackground(user.id);
 
     await logActivity(req, "user.login", {
@@ -86,7 +84,7 @@ export async function userLoginController(
   } catch (err) {
     await logActivity(req, "user.login_failed", {
       actor: "system",
-      metadata: { email: String(email).toLowerCase().trim() },
+      metadata: { email: email.toLowerCase().trim() },
     });
     sendError(res, "Invalid email or password.", 401);
   }
@@ -109,8 +107,11 @@ export async function userRegisterController(
 
   if (!(await requireCredentialProvider(res))) return;
 
+  const input = parseRequestBody(res, registrationRequestSchema, req.body);
+  if (!input) return;
+
   try {
-    const user = await userService.register(req.body);
+    const user = await userService.register(input);
     if (!user) {
       sendError(res, "Registration failed.", 400);
       return;
@@ -169,7 +170,7 @@ export async function userMeController(
     return;
   }
 
-  // Sync Stripe data in background on session check (non-blocking)
+  // Sync billing data in background on session check (non-blocking)
   billingService.syncInBackground(session.user.id);
 
   sendOk(res, { ...session.user, impersonation: session.impersonation });
