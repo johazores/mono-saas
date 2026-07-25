@@ -35,16 +35,23 @@ import {
   resolveCredentialsIdentity,
   resolveLegacyClerkIdentity,
 } from "@/lib/auth/identity-resolver";
+import type { AuthProviderInterface } from "@/lib/auth/types";
 
 const users = vi.mocked(prisma.user);
 const invitations = vi.mocked(invitationRepository);
 const settings = vi.mocked(settingService);
+const getProfile = vi.fn();
 
 const provider = {
   name: "clerk",
   verify: vi.fn(),
-  getProfile: vi.fn(),
-};
+  getProfile,
+} as unknown as AuthProviderInterface;
+
+const credentialsProvider = {
+  name: "credentials",
+  verify: vi.fn(),
+} as unknown as AuthProviderInterface;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -73,7 +80,7 @@ describe("identity resolvers", () => {
             },
           },
         },
-        { name: "credentials", verify: vi.fn() },
+        credentialsProvider,
       ),
     ).resolves.toEqual({
       id: "user-id",
@@ -106,7 +113,7 @@ describe("identity resolvers", () => {
     );
 
     expect(result).toMatchObject({ id: "local-user" });
-    expect(provider.getProfile).not.toHaveBeenCalled();
+    expect(getProfile).not.toHaveBeenCalled();
     expect(invitations.findPendingByEmail).not.toHaveBeenCalled();
   });
 
