@@ -203,7 +203,7 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-12 Performance | 2 | 2 |
 | WS-13 Testing | 2 | 0 |
 | WS-14 Production | 3 | 0 |
-| WS-15 Tech debt | 5 | 2 |
-| **Total** | **60** | **22** |
+| WS-15 Tech debt | 5 | 3 |
+| **Total** | **60** | **23** |
 
 `In progress` and externally blocked work is not counted as done. The workstream files contain the authoritative status of each task.
