@@ -1,3 +1,4 @@
+import { createAsyncTtlCache } from "@/lib/async-ttl-cache";
 import { settingRepository } from "@/repositories/setting-repository";
 import {
   isAllowedSettingKey,
@@ -16,6 +17,8 @@ import type {
   SiteConfig,
   ThemeTokens,
 } from "@/types";
+
+const CONFIG_CACHE_MS = 5_000;
 
 const AUTH_DEFAULTS: AuthConfig = {
   provider: "credentials",
@@ -68,7 +71,125 @@ function validateAuthorizedParties(value: unknown): string[] {
   return parties;
 }
 
+async function loadAuthConfig(): Promise<AuthConfig> {
+  const records = await settingRepository.getMany([
+    "auth.provider",
+    "auth.clerkPublishableKey",
+    "auth.clerkSecretKey",
+  ]);
+  const map = new Map(records.map((record) => [record.key, record.value]));
+
+  return {
+    provider:
+      (map.get("auth.provider") as AuthProvider) ?? AUTH_DEFAULTS.provider,
+    clerkPublishableKey:
+      (map.get("auth.clerkPublishableKey") as string) ??
+      AUTH_DEFAULTS.clerkPublishableKey,
+    clerkSecretKey:
+      (map.get("auth.clerkSecretKey") as string) ??
+      AUTH_DEFAULTS.clerkSecretKey,
+  };
+}
+
+async function loadClerkSecurityConfig(): Promise<ClerkSecurityConfig> {
+  const records = await settingRepository.getMany([
+    "auth.authorizedParties",
+    "auth.openSignup",
+  ]);
+  const map = new Map(records.map((record) => [record.key, record.value]));
+  const configuredParties = normalizeAuthorizedParties(
+    map.get("auth.authorizedParties"),
+  );
+  const fallbackParties = normalizeAuthorizedParties(
+    process.env.CLIENT_ORIGIN ?? "",
+  );
+
+  return {
+    authorizedParties:
+      configuredParties.length > 0 ? configuredParties : fallbackParties,
+    openSignup: map.get("auth.openSignup") === true,
+  };
+}
+
+async function loadPaymentConfig(): Promise<PaymentConfig> {
+  const records = await settingRepository.getMany([
+    "payment.provider",
+    "payment.mode",
+    "payment.stripe.testPublicKey",
+    "payment.stripe.testSecretKey",
+    "payment.stripe.livePublicKey",
+    "payment.stripe.liveSecretKey",
+  ]);
+  const map = new Map(records.map((record) => [record.key, record.value]));
+
+  const provider =
+    (map.get("payment.provider") as PaymentProviderName) ?? "stripe";
+  const mode = (map.get("payment.mode") as PaymentMode) ?? "test";
+
+  const publicKey =
+    mode === "test"
+      ? ((map.get("payment.stripe.testPublicKey") as string) ?? "")
+      : ((map.get("payment.stripe.livePublicKey") as string) ?? "");
+  const secretKey =
+    mode === "test"
+      ? ((map.get("payment.stripe.testSecretKey") as string) ?? "")
+      : ((map.get("payment.stripe.liveSecretKey") as string) ?? "");
+
+  return { provider, mode, publicKey, secretKey };
+}
+
+async function loadSiteConfig(): Promise<SiteConfig> {
+  const records = await settingRepository.getAll();
+  const map = new Map(records.map((record) => [record.key, record.value]));
+
+  const theme: ThemeTokens = {};
+  for (const [key, value] of map) {
+    if (key.startsWith("theme.") && typeof value === "string" && value !== "") {
+      const token = key.slice(6) as keyof ThemeTokens;
+      theme[token] = value;
+    }
+  }
+
+  return {
+    title: (map.get("site.title") as string) ?? "mono-next",
+    tagline: (map.get("site.tagline") as string) ?? "",
+    favicon: (map.get("site.favicon") as string) ?? "",
+    logo: (map.get("site.logo") as string) ?? "",
+    logoDark: (map.get("site.logoDark") as string) ?? "",
+    authQuote: (map.get("site.authQuote") as string) ?? "",
+    theme,
+  };
+}
+
+const authConfigCache = createAsyncTtlCache(loadAuthConfig, CONFIG_CACHE_MS);
+const clerkSecurityCache = createAsyncTtlCache(
+  loadClerkSecurityConfig,
+  CONFIG_CACHE_MS,
+);
+const paymentConfigCache = createAsyncTtlCache(
+  loadPaymentConfig,
+  CONFIG_CACHE_MS,
+);
+const siteConfigCache = createAsyncTtlCache(loadSiteConfig, CONFIG_CACHE_MS);
+
+function invalidateConfigCaches(key?: string): void {
+  if (!key || key.startsWith("auth.")) {
+    authConfigCache.invalidate();
+    clerkSecurityCache.invalidate();
+  }
+  if (!key || key.startsWith("payment.")) {
+    paymentConfigCache.invalidate();
+  }
+  if (!key || key.startsWith("site.") || key.startsWith("theme.")) {
+    siteConfigCache.invalidate();
+  }
+}
+
 export const settingService = {
+  invalidateCache(key?: string): void {
+    invalidateConfigCaches(key);
+  },
+
   async get(key: string): Promise<unknown> {
     const record = await settingRepository.get(key);
     return record ? maskSecret(key, record.value) : null;
@@ -130,6 +251,7 @@ export const settingService = {
     }
 
     await settingRepository.set(key, value);
+    invalidateConfigCaches(key);
   },
 
   async getAll(): Promise<Array<{ key: string; value: unknown }>> {
@@ -141,48 +263,15 @@ export const settingService = {
   },
 
   async getAuthConfig(): Promise<AuthConfig> {
-    const keys = [
-      "auth.provider",
-      "auth.clerkPublishableKey",
-      "auth.clerkSecretKey",
-    ];
-    const records = await settingRepository.getMany(keys);
-    const map = new Map(records.map((record) => [record.key, record.value]));
-
-    return {
-      provider:
-        (map.get("auth.provider") as AuthProvider) ?? AUTH_DEFAULTS.provider,
-      clerkPublishableKey:
-        (map.get("auth.clerkPublishableKey") as string) ??
-        AUTH_DEFAULTS.clerkPublishableKey,
-      clerkSecretKey:
-        (map.get("auth.clerkSecretKey") as string) ??
-        AUTH_DEFAULTS.clerkSecretKey,
-    };
+    return authConfigCache.get();
   },
 
   async getClerkSecurityConfig(): Promise<ClerkSecurityConfig> {
-    const records = await settingRepository.getMany([
-      "auth.authorizedParties",
-      "auth.openSignup",
-    ]);
-    const map = new Map(records.map((record) => [record.key, record.value]));
-    const configuredParties = normalizeAuthorizedParties(
-      map.get("auth.authorizedParties"),
-    );
-    const fallbackParties = normalizeAuthorizedParties(
-      process.env.CLIENT_ORIGIN ?? "",
-    );
-
-    return {
-      authorizedParties:
-        configuredParties.length > 0 ? configuredParties : fallbackParties,
-      openSignup: map.get("auth.openSignup") === true,
-    };
+    return clerkSecurityCache.get();
   },
 
   async getPublicAuthConfig(): Promise<PublicAuthConfig> {
-    const config = await this.getAuthConfig();
+    const config = await authConfigCache.get();
     return {
       provider: config.provider,
       clerkPublishableKey: config.clerkPublishableKey,
@@ -190,35 +279,11 @@ export const settingService = {
   },
 
   async getPaymentConfig(): Promise<PaymentConfig> {
-    const keys = [
-      "payment.provider",
-      "payment.mode",
-      "payment.stripe.testPublicKey",
-      "payment.stripe.testSecretKey",
-      "payment.stripe.livePublicKey",
-      "payment.stripe.liveSecretKey",
-    ];
-    const records = await settingRepository.getMany(keys);
-    const map = new Map(records.map((record) => [record.key, record.value]));
-
-    const provider =
-      (map.get("payment.provider") as PaymentProviderName) ?? "stripe";
-    const mode = (map.get("payment.mode") as PaymentMode) ?? "test";
-
-    const publicKey =
-      mode === "test"
-        ? ((map.get("payment.stripe.testPublicKey") as string) ?? "")
-        : ((map.get("payment.stripe.livePublicKey") as string) ?? "");
-    const secretKey =
-      mode === "test"
-        ? ((map.get("payment.stripe.testSecretKey") as string) ?? "")
-        : ((map.get("payment.stripe.liveSecretKey") as string) ?? "");
-
-    return { provider, mode, publicKey, secretKey };
+    return paymentConfigCache.get();
   },
 
   async getPublicPaymentConfig(): Promise<PublicPaymentConfig> {
-    const config = await this.getPaymentConfig();
+    const config = await paymentConfigCache.get();
     return {
       provider: config.provider,
       mode: config.mode,
@@ -227,25 +292,6 @@ export const settingService = {
   },
 
   async getSiteConfig(): Promise<SiteConfig> {
-    const records = await settingRepository.getAll();
-    const map = new Map(records.map((record) => [record.key, record.value]));
-
-    const theme: ThemeTokens = {};
-    for (const [key, value] of map) {
-      if (key.startsWith("theme.") && typeof value === "string" && value !== "") {
-        const token = key.slice(6) as keyof ThemeTokens;
-        theme[token] = value;
-      }
-    }
-
-    return {
-      title: (map.get("site.title") as string) ?? "mono-next",
-      tagline: (map.get("site.tagline") as string) ?? "",
-      favicon: (map.get("site.favicon") as string) ?? "",
-      logo: (map.get("site.logo") as string) ?? "",
-      logoDark: (map.get("site.logoDark") as string) ?? "",
-      authQuote: (map.get("site.authQuote") as string) ?? "",
-      theme,
-    };
+    return siteConfigCache.get();
   },
 };
