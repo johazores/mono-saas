@@ -34,38 +34,38 @@ Short decision records in `docs/decisions/`. Each states context, options, decis
 ### WS-1 · Security (do first)
 
 **T-101 · Encrypt secrets at rest**
-- **Priority** P0 · **Status** Not started · **Complexity** M · **Depends on** —
-- **Notes:** Resolves F-1. AES-256-GCM, key from a single bootstrap env var (`ENCRYPTION_KEY`, 32 bytes). Store `{ iv, authTag, ciphertext, keyVersion }`. Encrypt/decrypt in the repository layer so services stay unaware. Mark which `ALLOWED_KEYS` entries are secret-class; only those get encrypted. `lib/secure-credentials.ts` either grows into this or gets renamed — the current name actively misleads.
+- **Priority** P0 · **Status** In progress · **Complexity** M · **Depends on** —
+- **Notes:** AES-256-GCM repository encryption, key versions, tamper tests, registry-based secret classification, and a migration/rotation command are implemented. Deployment must still configure the key and run the migration against each real database.
 - **Acceptance:** No plaintext secret in `SiteSetting`; unit tests cover round-trip, tampered authTag rejection, and key rotation by version; existing rows migrated by a one-shot script.
 
 **T-102 · Redact secrets on read paths**
-- **Priority** P0 · **Status** Not started · **Complexity** S · **Depends on** T-101
-- **Notes:** `settingService.getAll()` and `GET /api/panel/settings` currently return every value. Secret-class keys should return a masked sentinel; writes accept plaintext, reads never return it. Admin UI shows "configured / not configured".
+- **Priority** P0 · **Status** Done · **Complexity** S · **Depends on** T-101
+- **Notes:** Secret-class settings return a masked sentinel through individual and collection read paths. Sending the sentinel back preserves the configured value.
 - **Acceptance:** No endpoint returns a decrypted secret; test asserts masking.
 
 **T-103 · Rotate all exposed credentials**
 - **Priority** P0 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** Any Stripe or Clerk key ever written to a DB that has been dumped, shared, or backed up must be treated as compromised. Do this independently of T-101.
+- **Notes:** Any Stripe or Clerk key ever written to a DB that has been dumped, shared, or backed up must be treated as compromised. This is an external provider-dashboard operation and cannot be completed from repository code.
 - **Acceptance:** Keys rotated in provider dashboards; new values written post-T-101.
 
 **T-104 · Pin Clerk `authorizedParties`**
-- **Priority** P1 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** Resolves half of F-5. Pass `authorizedParties` to `verifyToken` from configured allowed origins.
+- **Priority** P1 · **Status** Done · **Complexity** S · **Depends on** —
+- **Notes:** Clerk verification now fails closed without an origin allowlist and passes configured authorized parties to token verification.
 - **Acceptance:** Token minted for a non-listed origin is rejected; test covers it.
 
 **T-105 · Gate Clerk auto-provisioning**
-- **Priority** P1 · **Status** Not started · **Complexity** M · **Depends on** T-104
-- **Notes:** Resolves F-6. A valid token should not silently create an account. Require a matching `UserInvitation`, or an explicit "open signup" setting, default off. Scope the `clerkId` lookup explicitly rather than relying on extension injection.
+- **Priority** P1 · **Status** Done · **Complexity** M · **Depends on** T-104
+- **Notes:** New Clerk identities require a pending unexpired invitation unless `auth.openSignup` is explicitly enabled. Clerk ID lookup is explicitly environment-scoped and existing linked identities are protected from reassignment.
 - **Acceptance:** Auto-create is off by default; invitation path tested; no cross-scope `clerkId` match possible.
 
 **T-106 · Impersonation hardening**
-- **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** —
-- **Notes:** `admin_impersonating` is `adminId:userId:hmac` with no expiry inside the payload and no server-side record, so it cannot be revoked and never ages out. Add an issued-at claim with a short TTL, verify `admin.status === "active"` at use time, and log every impersonation start/stop to `ActivityLog`.
+- **Priority** P2 · **Status** Done · **Complexity** M · **Depends on** —
+- **Notes:** Impersonation payloads include issued-at time, expire after one hour, use a target session with the same lifetime, validate active admin status on every request, and retain existing activity logs for start/stop.
 - **Acceptance:** Expired token rejected; disabled admin cannot impersonate; both events logged.
 
 **T-107 · Security review pass**
-- **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** T-101, T-301
-- **Notes:** CSRF coverage (`lib/csrf.ts`) across all mutating routes; rate-limiter (`lib/rate-limiter.ts`) is in-memory and resets per instance — fine for single-node, document the limit; security headers audit; verify PBKDF2 parameters against current guidance.
+- **Priority** P2 · **Status** In progress · **Complexity** M · **Depends on** T-101, T-301
+- **Notes:** `docs/security.md` now records implemented controls and deployment requirements. Full CSRF route coverage, distributed rate limiting, security header audit, and post-tenancy review remain.
 - **Acceptance:** Findings documented in `docs/security.md` with tasks raised for each gap.
 
 ---
