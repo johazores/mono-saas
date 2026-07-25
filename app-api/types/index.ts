@@ -98,8 +98,8 @@ export type {
   StripeProductDetailResult,
 } from "./stripe";
 export type {
-  StripeSubscription,
-  StripeInvoice,
+  ProviderSubscription,
+  ProviderInvoice,
   BillingStatus,
 } from "./billing";
 export type {
