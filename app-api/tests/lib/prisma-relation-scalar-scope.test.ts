@@ -81,4 +81,22 @@ describe("direct relation scalar write scope", () => {
       contentType: { connect: { env: "dev", id: "type-id" } },
     });
   });
+
+  it("rejects mixed relation objects and scalar foreign keys", () => {
+    expect(() =>
+      applyEnvScope(
+        "create",
+        {
+          data: {
+            userId: "cross-scope-user",
+            user: { connect: { id: "same-scope-user" } },
+            tokenHash: "hash",
+            expiresAt: new Date("2026-07-25T12:00:00Z"),
+          },
+        },
+        "dev",
+        "UserSession",
+      ),
+    ).toThrow("Ambiguous relation write");
+  });
 });
