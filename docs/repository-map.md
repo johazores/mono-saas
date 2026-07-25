@@ -6,42 +6,43 @@
 
 ## Overview
 
-Mono SaaS is a repository containing two independently installed Next.js applications managed by root scripts:
+Mono SaaS contains two independently installed Next.js applications managed through root orchestration scripts:
 
 | Application | Port | Current responsibility |
 | --- | ---: | --- |
-| `app-api` | 7001 | Pages Router API, business services, data access, provider integrations, administrator and member authentication |
-| `app-client` | 7000 | App Router public website, administrator UI, member portal, and shared client-side presentation |
+| `app-api` | 7001 | Pages Router API, business services, data access, provider adapters, administrator and member authentication |
+| `app-client` | 7000 | App Router public website, current administrator UI, member portal, and shared client presentation |
 
-The root `package.json` runs install, development, build, test, formatting, Prisma, and seed commands across both applications. There is no `pnpm-workspace.yaml`; each application currently owns its own dependencies and lock resolution through the root orchestration scripts.
+The root package is named `mono-saas` and contains orchestration-only development dependencies. Application runtime dependencies belong to the application that imports them. `zod` therefore lives in `app-api`, while the unused root MCP SDK has been removed.
+
+There is currently no `pnpm-workspace.yaml`; root scripts install and execute each application through `--prefix`.
 
 ## Top-level structure
 
 ```text
 mono-saas/
 ├─ app-api/                 Backend application
-├─ app-client/              Client-facing and current admin application
-├─ docs/                    Architecture, operational, and roadmap documentation
-├─ package.json             Cross-application scripts
-├─ pnpm-lock.yaml           Root dependency lock
+├─ app-client/              Public/member and current admin application
+├─ docs/                    Architecture, decisions, operations, and roadmap
+├─ package.json             Cross-application orchestration scripts
 ├─ README.md                Repository entry point
 ├─ AGENTS.md                Development instructions
-└─ CLAUDE.md                Duplicated development instructions pending cleanup
+└─ CLAUDE.md                Duplicated instructions pending cleanup
 ```
 
 ## `app-api`
 
 ```text
 app-api/
-├─ app/                     Placeholder App Router files; reserved for future admin shell
-├─ controllers/             HTTP method handling, auth gates, CSRF, response mapping
+├─ app/                     Placeholder App Router files for the future admin shell
+├─ controllers/             HTTP methods, auth gates, validation, response mapping
 ├─ lib/                     Cross-cutting runtime utilities and provider registries
-├─ pages/api/               Thin Next.js Pages Router endpoints
-├─ prisma/                  Prisma schema, seeds, and one-shot migrations
-├─ repositories/            Prisma data access only
+├─ pages/api/               Thin Pages Router endpoints
+├─ prisma/                  Schema, seeds, and one-shot migrations
+├─ repositories/            Prisma data access
 ├─ services/                Business rules and orchestration
-├─ tests/                   Vitest unit tests grouped by layer
-├─ types/                   Shared backend TypeScript contracts
+├─ tests/                   Vitest tests grouped by layer
+├─ types/                   Shared backend contracts
 ├─ package.json
 └─ tsconfig.json
 ```
@@ -57,85 +58,63 @@ pages/api route
           -> MongoDB
 ```
 
-### Layer rules
+### Route rules
 
-#### Routes: `pages/api/`
+Routes should export the matching controller and contain no business, database, provider, or session logic.
 
-Routes should:
-
-- export the matching controller;
-- contain no business rules;
-- avoid direct database, provider, or session logic.
-
-#### Controllers: `controllers/`
+### Controller rules
 
 Controllers may:
 
 - select behavior by HTTP method;
 - require administrator or member sessions;
-- verify CSRF for state-changing requests;
-- validate transport-level input;
-- map known failures to response status codes;
-- create audit-log context.
+- verify CSRF on state changes;
+- validate transport input;
+- map known failures to status codes;
+- attach audit context.
 
-Controllers must not:
+Controllers must not call Prisma or implement reusable business rules.
 
-- call Prisma directly;
-- implement reusable business rules;
-- return provider-native payloads when a neutral application type exists.
-
-#### Services: `services/`
+### Service rules
 
 Services may:
 
-- validate business invariants;
-- coordinate repositories and providers;
-- transform records into application types;
+- enforce business invariants;
+- coordinate repositories and provider interfaces;
+- transform persistence/provider records into application contracts;
 - decide lifecycle transitions.
 
-Services must not:
+Services must not depend on Next.js request/response objects or call Prisma directly.
 
-- know about `NextApiRequest` or `NextApiResponse`;
-- call Prisma directly;
-- depend on client components.
-
-#### Repositories: `repositories/`
+### Repository rules
 
 Repositories may:
 
 - execute Prisma operations;
-- define projections and ordering;
-- apply persistence-bound encryption or serialization;
-- expose small data-access methods.
+- define projections, ordering, and persistence queries;
+- apply persistence-bound encryption or serialization.
 
-Repositories must not:
+Repositories must not decide permissions, call external providers, or return presentation-specific errors.
 
-- perform HTTP work;
-- decide permissions;
-- call payment, authentication, email, or storage providers;
-- throw presentation-specific errors.
+### Library rules
 
-#### Libraries: `lib/`
+`lib/` owns cross-cutting infrastructure such as:
 
-`lib/` contains cross-cutting concerns that are not one business service, including:
-
-- administrator and member session primitives;
-- Clerk verification;
-- Prisma clients and scoping;
-- encryption and secure credential access;
-- payment-provider registry;
-- CSRF, rate limiting, request utilities, and API responses;
+- session and identity verification;
+- Prisma scope enforcement;
+- encrypted setting storage;
+- payment-provider adapters and registries;
+- configuration caches;
+- CSRF, rate limiting, request utilities, and response helpers;
 - feature and settings registration.
 
-Provider-neutral interfaces belong in the corresponding `lib/<capability>/` directory. Provider-specific imports stay inside adapter files.
+Provider-neutral contracts belong in the capability directory. Provider-native API shapes stay inside the adapter boundary.
 
-#### Types: `types/`
+### Types
 
-Backend application contracts are centralized and barrel-exported through `types/index.ts`. Provider-native response shapes should remain private to an adapter unless another layer genuinely consumes them.
+Backend application contracts are centralized through `types/index.ts`. A provider-specific type should not be exported as a shared billing, authentication, storage, or notification contract.
 
-#### Tests: `tests/`
-
-The current suites are primarily unit tests with mocked repositories. New work should place tests beside the layer being protected:
+### Tests
 
 ```text
 tests/controllers/
@@ -144,7 +123,7 @@ tests/repositories/
 tests/services/
 ```
 
-Tenant-isolation and full route integration tests will require a real test database and are tracked separately.
+The current suite is primarily unit-level. Tenant-isolation and route-level integration tests require a real test database and remain separate roadmap tasks.
 
 ## `app-client`
 
@@ -155,36 +134,36 @@ app-client/
 │  ├─ (public)/             Public routes and CMS rendering
 │  └─ (user)/               Protected member routes
 ├─ components/
-│  ├─ admin/                Administrator-specific presentation
+│  ├─ admin/                Administrator presentation
 │  ├─ blocks/               CMS block rendering
 │  ├─ content/              Public content rendering
 │  ├─ layout/               Application shells and navigation
 │  └─ ui/                   Reusable UI primitives
-├─ hooks/                   SWR and application hooks
-├─ lib/                     Browser/client helpers
+├─ hooks/                   Client data hooks
+├─ lib/                     Browser helpers
 ├─ services/                Typed API clients
-├─ types/                   Frontend-facing contracts
+├─ types/                   Frontend contracts
 ├─ package.json
 └─ tsconfig.json
 ```
 
 ### Current route groups
 
-- `(admin)` contains the administrator dashboard, CMS management, users, commerce, reporting, and settings.
-- `(public)` renders public website and CMS content.
-- `(user)` contains the member dashboard, account, purchases, downloads, features, and sub-user management.
+- `(admin)` contains dashboard, CMS, users, commerce, reports, and settings.
+- `(public)` renders public pages and CMS content.
+- `(user)` contains member dashboard, account, purchases, downloads, feature access, and sub-user management.
 
 ### Client rules
 
-- Pages and components call the API through `services/`; they do not construct scattered fetch logic.
-- Shared remote state uses SWR hooks where appropriate.
-- UI primitives live in `components/ui/` and must not import business-specific pages.
-- Themeable colors use design tokens rather than hardcoded utility colors.
-- Backend secrets and provider-private payloads never appear in frontend types.
+- Use `services/` for API communication rather than scattered fetch logic.
+- Use shared hooks for remote state and deduplication.
+- Keep reusable primitives in `components/ui/`.
+- Use theme tokens instead of hardcoded themeable colors.
+- Never expose backend secrets or provider-private payloads in frontend contracts.
 
 ## Planned application boundary
 
-The accepted target architecture moves administrator presentation into `app-api`:
+The accepted target moves administrator presentation into `app-api`:
 
 ```text
 app-api
@@ -200,19 +179,20 @@ app-client
 └─ Member Portal
 ```
 
-Until T-801 is implemented, existing administrator files remain in `app-client`. New administrator features should avoid creating client-only infrastructure that will be difficult to move.
+Until T-801, new administrator work should avoid client-only infrastructure that would make the move harder.
 
 ## Data and configuration ownership
 
-- MongoDB access belongs only in `app-api/repositories` or explicitly documented infrastructure scripts.
+- MongoDB access belongs in repositories or explicitly documented migration/infrastructure scripts.
 - Secret settings are encrypted at the repository boundary.
-- The browser receives only public configuration or masked secret status.
-- Environment variables are bootstrap inputs, not a general integration configuration store.
-- After the tenant migration, tenant context will be resolved per request and consumed by the persistence boundary.
+- The browser receives only public configuration or a masked configured-secret status.
+- Environment variables are bootstrap inputs, not the general integration store.
+- Runtime configuration uses short TTL caches with explicit invalidation after writes.
+- After the tenant migration, request-local tenant context controls persistence scope.
 
 ## Dependency direction
 
-Allowed direction:
+Allowed:
 
 ```text
 route -> controller -> service -> repository -> Prisma
@@ -220,26 +200,25 @@ route -> controller -> service -> repository -> Prisma
                        -> provider interface -> provider adapter
 ```
 
-Disallowed direction examples:
+Disallowed examples:
 
 - repository -> service;
 - service -> controller;
 - API application -> client component;
 - shared interface -> one provider SDK;
 - client application -> database;
-- tenant-scoped code -> unscoped base Prisma without an explicit audited platform-admin path.
+- tenant code -> unscoped Prisma without an explicit audited platform-admin path.
 
-## Naming and file placement
+## Naming and placement
 
 - Use kebab-case filenames.
-- Keep route files thin.
-- Extend an existing service, repository, provider registry, hook, or UI primitive before creating a parallel abstraction.
-- Keep files focused; split when a file owns multiple unrelated responsibilities.
-- Domain-specific modules belong outside the platform core as defined by ADR-004.
+- Keep routes thin and functions focused.
+- Extend existing services, repositories, registries, hooks, and primitives before creating parallel abstractions.
+- Split files that own unrelated responsibilities.
+- Keep business-domain models outside the platform core under ADR-004.
+- Put a dependency in the package that imports it; the root package should remain orchestration-only.
 
 ## Common commands
-
-From the repository root:
 
 ```bash
 pnpm install
@@ -248,19 +227,14 @@ pnpm build
 pnpm test
 pnpm prisma:push
 pnpm db:seed
-```
-
-Security migration:
-
-```bash
 pnpm --prefix app-api db:migrate:encrypt-secrets
 ```
 
 ## Known structural debt
 
-- The root package is still named `mono-next`.
-- The repository is orchestrated as a monorepo but does not yet use a declared pnpm workspace.
+- The repository uses root orchestration scripts instead of a declared pnpm workspace.
 - Administrator presentation still lives in `app-client`.
-- `app-api/app/` contains placeholders until the administrator shell migration.
+- `app-api/app/` contains placeholders until T-801.
 - UI primitives are not yet extracted into a shared package.
+- `lib/secure-credentials.ts` should be renamed to reflect session-secret responsibility.
 - `AGENTS.md` and `CLAUDE.md` duplicate instructions.
