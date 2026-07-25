@@ -80,10 +80,9 @@ export const purchaseFileService = {
   async delete(id: string): Promise<void> {
     const file = (await purchaseFileRepository.findById(
       id,
-    )) as PurchaseFileRecord | null;
-    if (!file) return;
+    )) as PurchaseFileRecord | null | undefined;
 
-    if (file.storageProvider || file.storageKey) {
+    if (file?.storageProvider || file?.storageKey) {
       if (!file.storageProvider || !file.storageKey) {
         throw new Error("File storage metadata is incomplete.");
       }
