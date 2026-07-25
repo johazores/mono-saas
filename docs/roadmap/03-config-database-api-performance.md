@@ -9,7 +9,7 @@
 
 **T-902 · Define the bootstrap env surface**
 - **Priority** P1 · **Status** In progress · **Complexity** S · **Depends on** T-101
-- **Notes:** Encryption bootstrap variables and operational requirements are documented in `.env.example` and `docs/security.md`. Startup validation and the final surface depend on completing the `APP_ENV` tenancy migration.
+- **Notes:** `.env.example` and `docs/bootstrap-configuration.md` now define the bootstrap-only surface. Next.js `instrumentation.register()` validates the database URL, administrator/member session secrets, transitional `APP_ENV`, optional Clerk origin fallback, optional trusted tenant-header secret, and current encryption key/version rules. `ENCRYPTION_KEY` is required in production. Provider/integration credentials remain database-backed settings. The remaining blocker is T-305 removing `APP_ENV` and finalizing the post-migration surface.
 - **Acceptance:** Documented list; startup validation; `.env.example` matches exactly.
 
 **T-903 · Settings change audit**
@@ -22,8 +22,8 @@
 ### WS-10 · Database & storage
 
 **T-1001 · Object storage provider**
-- **Priority** P1 · **Status** Not started · **Complexity** L · **Depends on** T-005
-- **Notes:** Resolve F-7 using the object-storage boundary accepted in ADR-005. Rows retain provider, key, size, mime type, checksum, and metadata; bytes leave MongoDB.
+- **Priority** P1 · **Status** In progress · **Complexity** L · **Depends on** T-005
+- **Notes:** The merged object-storage foundation defines provider-neutral storage contracts and a dependency-free S3 Signature Version 4 adapter for S3/R2-compatible stores. It supports short-lived direct upload/download URLs plus HEAD/delete lifecycle operations so large payloads bypass the Next.js process. Remaining work is encrypted provider configuration, media/purchase-file service integration, authorization before signed downloads, and a real configured object-store test with a file larger than 20 MB.
 - **Acceptance:** Upload and download work through object storage; a file larger than 20 MB succeeds.
 
 **T-1002 · Migrate base64 rows**
