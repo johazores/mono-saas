@@ -1,9 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { requireAdmin } from "@/lib/admin-auth";
 import { sendError, sendOk } from "@/lib/api-response";
-import { productService } from "@/services/product-service";
 import { logActivity } from "@/lib/activity-logger";
 import { verifyCsrf } from "@/lib/csrf";
+import {
+  productCreateRequestSchema,
+  productUpdateRequestSchema,
+} from "@/lib/request-schemas";
+import { parseRequestBody } from "@/lib/request-validation";
+import { productService } from "@/services/product-service";
 
 export async function productCollectionController(
   req: NextApiRequest,
@@ -25,8 +30,11 @@ export async function productCollectionController(
   if (!verifyCsrf(req, res)) return;
 
   if (req.method === "POST") {
+    const input = parseRequestBody(res, productCreateRequestSchema, req.body);
+    if (!input) return;
+
     try {
-      const product = await productService.create(req.body);
+      const product = await productService.create(input);
       await logActivity(req, "product.create", {
         actor: "admin",
         actorId: session.admin.id,
@@ -68,8 +76,11 @@ export async function productItemController(
   if (!verifyCsrf(req, res)) return;
 
   if (req.method === "PUT") {
+    const input = parseRequestBody(res, productUpdateRequestSchema, req.body);
+    if (!input) return;
+
     try {
-      const product = await productService.update(id, req.body);
+      const product = await productService.update(id, input);
       await logActivity(req, "product.update", {
         actor: "admin",
         actorId: session.admin.id,
