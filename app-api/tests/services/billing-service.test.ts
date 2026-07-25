@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/repositories/user-repository", () => ({
   userRepository: {
@@ -54,6 +54,23 @@ const testConfig = {
   secretKey: "sk_test_123",
 };
 
+const subscription = {
+  id: "sub_1",
+  status: "active",
+  currentPeriodEnd: 1_700_000_000,
+  cancelAtPeriodEnd: false,
+  interval: "month",
+  items: [{ priceId: "price_test_1", productId: "prod_external_1" }],
+};
+
+const product = {
+  id: "p1",
+  price: 9.99,
+  currency: "USD",
+  stripeTestProductId: "prod_external_1",
+  stripeLiveProductId: null,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetProvider.mockReturnValue(mockProvider);
@@ -61,33 +78,35 @@ beforeEach(() => {
 });
 
 describe("billingService.ensureStripeCustomer", () => {
-  it("returns existing customer ID if already set", async () => {
+  it("returns an existing customer ID", async () => {
     userRepo.findById.mockResolvedValue({
       id: "u1",
-      email: "test@test.com",
+      email: "test@example.com",
       name: "Test",
       stripeCustomerId: "cus_existing",
     } as never);
 
-    const result = await billingService.ensureStripeCustomer("u1");
-    expect(result).toBe("cus_existing");
+    await expect(billingService.ensureStripeCustomer("u1")).resolves.toBe(
+      "cus_existing",
+    );
     expect(mockProvider.findOrCreateCustomer).not.toHaveBeenCalled();
   });
 
-  it("creates customer via Stripe if not set", async () => {
+  it("creates and stores a missing customer reference", async () => {
     userRepo.findById.mockResolvedValue({
       id: "u1",
-      email: "test@test.com",
+      email: "test@example.com",
       name: "Test",
       stripeCustomerId: null,
     } as never);
     mockProvider.findOrCreateCustomer.mockResolvedValue("cus_new");
     userRepo.update.mockResolvedValue({} as never);
 
-    const result = await billingService.ensureStripeCustomer("u1");
-    expect(result).toBe("cus_new");
+    await expect(billingService.ensureStripeCustomer("u1")).resolves.toBe(
+      "cus_new",
+    );
     expect(mockProvider.findOrCreateCustomer).toHaveBeenCalledWith(
-      "test@test.com",
+      "test@example.com",
       "Test",
       testConfig,
     );
@@ -96,7 +115,7 @@ describe("billingService.ensureStripeCustomer", () => {
     });
   });
 
-  it("throws if user not found", async () => {
+  it("throws when the user does not exist", async () => {
     userRepo.findById.mockResolvedValue(null);
     await expect(billingService.ensureStripeCustomer("u1")).rejects.toThrow(
       "User not found.",
@@ -105,114 +124,107 @@ describe("billingService.ensureStripeCustomer", () => {
 });
 
 describe("billingService.getStatus", () => {
-  it("returns empty status for user without Stripe customer", async () => {
+  it("returns empty billing data without a customer reference", async () => {
     userRepo.findById.mockResolvedValue({
       id: "u1",
       stripeCustomerId: null,
     } as never);
 
-    const status = await billingService.getStatus("u1");
-    expect(status.hasStripeCustomer).toBe(false);
-    expect(status.subscriptions).toEqual([]);
-    expect(status.invoices).toEqual([]);
+    await expect(billingService.getStatus("u1")).resolves.toMatchObject({
+      hasStripeCustomer: false,
+      subscriptions: [],
+      invoices: [],
+    });
   });
 
-  it("fetches subscriptions and invoices for Stripe customer", async () => {
+  it("returns provider-neutral subscriptions and invoices", async () => {
     userRepo.findById.mockResolvedValue({
       id: "u1",
       stripeCustomerId: "cus_123",
     } as never);
-    mockProvider.getCustomerSubscriptions.mockResolvedValue([
-      { id: "sub_1", status: "active", currentPeriodEnd: 1700000000 },
-    ]);
+    mockProvider.getCustomerSubscriptions.mockResolvedValue([subscription]);
     mockProvider.getCustomerInvoices.mockResolvedValue([
-      { id: "inv_1", status: "paid", amountPaid: 9.99 },
+      {
+        id: "inv_1",
+        status: "paid",
+        amountPaid: 9.99,
+        currency: "USD",
+        subscriptionId: null,
+        paymentId: "pi_1",
+        productId: "prod_external_1",
+        priceId: "price_test_1",
+        periodStart: 1_699_000_000,
+        periodEnd: 1_700_000_000,
+        hostedUrl: null,
+        pdfUrl: null,
+        created: 1_699_000_000,
+      },
     ]);
 
     const status = await billingService.getStatus("u1");
     expect(status.hasStripeCustomer).toBe(true);
-    expect(status.subscriptions).toHaveLength(1);
-    expect(status.invoices).toHaveLength(1);
+    expect(status.subscriptions).toEqual([subscription]);
+    expect(status.invoices[0]).toMatchObject({
+      paymentId: "pi_1",
+      productId: "prod_external_1",
+      priceId: "price_test_1",
+    });
   });
 });
 
 describe("billingService.syncPurchases", () => {
-  it("returns synced 0 for user without Stripe customer", async () => {
+  it("returns zero without a customer reference", async () => {
     userRepo.findById.mockResolvedValue({
       id: "u1",
       stripeCustomerId: null,
     } as never);
 
-    const result = await billingService.forceSyncPurchases("u1");
-    expect(result.synced).toBe(0);
+    await expect(billingService.forceSyncPurchases("u1")).resolves.toEqual({
+      synced: 0,
+    });
   });
 
-  it("syncs subscriptions to local purchases", async () => {
+  it("creates a purchase from a provider-neutral subscription", async () => {
     userRepo.findById.mockResolvedValue({
       id: "u1",
       stripeCustomerId: "cus_123",
     } as never);
-
-    mockProvider.getCustomerSubscriptions.mockResolvedValue([
-      {
-        id: "sub_1",
-        status: "active",
-        currentPeriodEnd: 1700000000,
-        cancelAtPeriodEnd: false,
-        interval: "month",
-        items: [{ priceId: "price_test_1", productId: "prod_stripe_1" }],
-      },
-    ]);
+    mockProvider.getCustomerSubscriptions.mockResolvedValue([subscription]);
     mockProvider.getCustomerInvoices.mockResolvedValue([]);
-    productRepo.listAll.mockResolvedValue([
-      {
-        id: "p1",
-        price: 9.99,
-        currency: "USD",
-        stripeTestProductId: "prod_stripe_1",
-        stripeLiveProductId: null,
-      },
-    ] as never);
+    productRepo.listAll.mockResolvedValue([product] as never);
     purchaseRepo.findByExternalId.mockResolvedValue(null);
     purchaseRepo.create.mockResolvedValue({ id: "pur_1" } as never);
 
-    const result = await billingService.forceSyncPurchases("u1");
-    expect(result.synced).toBe(1);
+    await expect(billingService.forceSyncPurchases("u1")).resolves.toEqual({
+      synced: 1,
+    });
     expect(purchaseRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         externalId: "sub_1",
         status: "active",
         amount: 9.99,
+        metadata: expect.objectContaining({
+          provider: "stripe",
+          providerType: "subscription",
+        }),
       }),
     );
   });
 
-  it("updates existing purchase by externalId", async () => {
+  it("updates an existing subscription purchase", async () => {
     userRepo.findById.mockResolvedValue({
       id: "u1",
       stripeCustomerId: "cus_123",
     } as never);
-
     mockProvider.getCustomerSubscriptions.mockResolvedValue([
       {
-        id: "sub_1",
+        ...subscription,
         status: "canceled",
-        currentPeriodEnd: 1700000000,
         cancelAtPeriodEnd: true,
-        interval: "month",
-        items: [{ priceId: "price_test_1", productId: "prod_stripe_1" }],
       },
     ]);
     mockProvider.getCustomerInvoices.mockResolvedValue([]);
-    productRepo.listAll.mockResolvedValue([
-      {
-        id: "p1",
-        price: 9.99,
-        currency: "USD",
-        stripeTestProductId: "prod_stripe_1",
-        stripeLiveProductId: null,
-      },
-    ] as never);
+    productRepo.listAll.mockResolvedValue([product] as never);
     purchaseRepo.findByExternalId.mockResolvedValue({
       id: "pur_existing",
       endDate: null,
@@ -220,118 +232,98 @@ describe("billingService.syncPurchases", () => {
     } as never);
     purchaseRepo.update.mockResolvedValue({} as never);
 
-    const result = await billingService.forceSyncPurchases("u1");
-    expect(result.synced).toBe(1);
+    await expect(billingService.forceSyncPurchases("u1")).resolves.toEqual({
+      synced: 1,
+    });
     expect(purchaseRepo.update).toHaveBeenCalledWith(
       "pur_existing",
       expect.objectContaining({ status: "cancelled" }),
     );
   });
 
-  it("skips invoices tied to synced subscriptions", async () => {
+  it("skips an invoice belonging to a synchronized subscription", async () => {
     userRepo.findById.mockResolvedValue({
       id: "u1",
       stripeCustomerId: "cus_123",
     } as never);
-
-    mockProvider.getCustomerSubscriptions.mockResolvedValue([
-      {
-        id: "sub_1",
-        status: "active",
-        currentPeriodEnd: 1700000000,
-        cancelAtPeriodEnd: false,
-        interval: "month",
-        items: [{ priceId: "price_test_1", productId: "prod_stripe_1" }],
-      },
-    ]);
+    mockProvider.getCustomerSubscriptions.mockResolvedValue([subscription]);
     mockProvider.getCustomerInvoices.mockResolvedValue([
       {
         id: "inv_1",
         status: "paid",
         amountPaid: 9.99,
-        currency: "usd",
+        currency: "USD",
         subscriptionId: "sub_1",
-        stripeProductId: "prod_stripe_1",
-        stripePriceId: "price_test_1",
-        periodStart: 1699000000,
-        periodEnd: 1700000000,
+        paymentId: "pi_1",
+        productId: "prod_external_1",
+        priceId: "price_test_1",
+        periodStart: 1_699_000_000,
+        periodEnd: 1_700_000_000,
         hostedUrl: null,
         pdfUrl: null,
-        created: 1699000000,
+        created: 1_699_000_000,
       },
     ]);
-    productRepo.listAll.mockResolvedValue([
-      {
-        id: "p1",
-        price: 9.99,
-        currency: "USD",
-        stripeTestProductId: "prod_stripe_1",
-        stripeLiveProductId: null,
-      },
-    ] as never);
+    productRepo.listAll.mockResolvedValue([product] as never);
     purchaseRepo.findByExternalId.mockResolvedValue(null);
     purchaseRepo.create.mockResolvedValue({ id: "pur_1" } as never);
 
-    const result = await billingService.forceSyncPurchases("u1");
-    // Should only sync the subscription, not the invoice (since it belongs to the sub)
-    expect(result.synced).toBe(1);
+    await expect(billingService.forceSyncPurchases("u1")).resolves.toEqual({
+      synced: 1,
+    });
     expect(purchaseRepo.create).toHaveBeenCalledTimes(1);
     expect(purchaseRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ externalId: "sub_1" }),
     );
   });
 
-  it("syncs standalone invoices not tied to subscriptions", async () => {
+  it("creates a purchase from a standalone neutral invoice", async () => {
     userRepo.findById.mockResolvedValue({
       id: "u1",
       stripeCustomerId: "cus_123",
     } as never);
-
     mockProvider.getCustomerSubscriptions.mockResolvedValue([]);
     mockProvider.getCustomerInvoices.mockResolvedValue([
       {
         id: "inv_standalone",
         status: "paid",
         amountPaid: 49.99,
-        currency: "usd",
+        currency: "USD",
         subscriptionId: null,
-        stripeProductId: "prod_stripe_2",
-        stripePriceId: null,
-        periodStart: 1699000000,
-        periodEnd: 1699000000,
-        hostedUrl: "https://invoice.stripe.com/i/123",
-        pdfUrl: "https://invoice.stripe.com/pdf/123",
-        created: 1699000000,
+        paymentId: "pi_standalone",
+        productId: "prod_external_1",
+        priceId: null,
+        periodStart: 1_699_000_000,
+        periodEnd: 1_699_000_000,
+        hostedUrl: "https://billing.example/invoice",
+        pdfUrl: "https://billing.example/invoice.pdf",
+        created: 1_699_000_000,
       },
     ]);
-    productRepo.listAll.mockResolvedValue([
-      {
-        id: "p2",
-        price: 49.99,
-        currency: "USD",
-        stripeTestProductId: "prod_stripe_2",
-        stripeLiveProductId: null,
-      },
-    ] as never);
+    productRepo.listAll.mockResolvedValue([product] as never);
     purchaseRepo.findByExternalId.mockResolvedValue(null);
     purchaseRepo.create.mockResolvedValue({ id: "pur_2" } as never);
 
-    const result = await billingService.forceSyncPurchases("u1");
-    expect(result.synced).toBe(1);
+    await expect(billingService.forceSyncPurchases("u1")).resolves.toEqual({
+      synced: 1,
+    });
     expect(purchaseRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         externalId: "inv_standalone",
         amount: 49.99,
         status: "completed",
+        metadata: expect.objectContaining({
+          provider: "stripe",
+          providerType: "invoice",
+        }),
       }),
     );
   });
 });
 
 describe("billingService.syncInBackground", () => {
-  it("swallows errors silently", () => {
+  it("does not throw synchronously", () => {
     userRepo.findById.mockRejectedValue(new Error("DB down"));
-    // Should not throw
     expect(() => billingService.syncInBackground("u1")).not.toThrow();
   });
 });
