@@ -51,8 +51,8 @@
 - **Acceptance:** No unexplained placeholder application files remain.
 
 **T-1504 · Rename `lib/secure-credentials.ts`**
-- **Priority** P2 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** The file validates administrator/member session secrets and does not handle encrypted provider credentials. Rename it to describe session-secret responsibility without missing import call sites.
+- **Priority** P2 · **Status** Done · **Complexity** S · **Depends on** —
+- **Notes:** Session-secret validation now lives in accurately named `lib/session-secrets.ts`. Member auth, local member/admin provider adapters, bootstrap validation, and affected tests use the new path. `lib/secure-credentials.ts` remains only as a deprecated compatibility re-export so legacy callers are not broken abruptly. Direct tests cover both `ADMIN_SESSION_SECRET` and `USER_SESSION_SECRET` validation.
 - **Acceptance:** The filename and imports accurately describe its responsibility.
 
 **T-1505 · Reconcile `AGENTS.md` / `CLAUDE.md`**
