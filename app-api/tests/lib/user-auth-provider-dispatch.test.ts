@@ -10,7 +10,7 @@ const authMocks = vi.hoisted(() => ({
   hashUserSessionToken: vi.fn(() => "token-hash"),
 }));
 
-vi.mock("@/lib/auth", () => ({
+vi.mock("@/lib/auth/index", () => ({
   getAuthProviderRegistration: authMocks.getAuthProviderRegistration,
   toAuthRequest: authMocks.toAuthRequest,
   hashUserSessionToken: authMocks.hashUserSessionToken,

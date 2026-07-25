@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getAuthProvider,
   getAuthProviderRegistration,
-} from "@/lib/auth";
+} from "@/lib/auth/index";
 
 describe("auth provider registry", () => {
   it("registers credentials and Clerk behind the same contract", () => {

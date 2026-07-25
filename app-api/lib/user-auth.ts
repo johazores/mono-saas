@@ -8,7 +8,7 @@ import {
   hashUserSessionToken,
   toAuthRequest,
   USER_SESSION_COOKIE,
-} from "@/lib/auth";
+} from "@/lib/auth/index";
 import { settingService } from "@/services/setting-service";
 import type { AccountStatus, UserAuthSession } from "@/types";
 
