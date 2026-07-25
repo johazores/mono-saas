@@ -37,6 +37,23 @@ export type CreateProductInput = {
   metadata?: Record<string, unknown>;
 };
 
+export type EmbeddedProductPriceInput = {
+  label: string;
+  stripePriceId: string;
+  mode: "test" | "live";
+  amount: number;
+  currency: string;
+  interval?: string;
+  startDate?: string;
+  endDate?: string;
+  isDefault: boolean;
+  stripeProductId?: string;
+};
+
+export type CreateProductWithPricesInput = CreateProductInput & {
+  prices?: EmbeddedProductPriceInput[];
+};
+
 export type UpdateProductInput = {
   name?: string;
   slug?: string;

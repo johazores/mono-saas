@@ -42,7 +42,7 @@
 
 **T-1101 · Request validation**
 - **Priority** P1 · **Status** In progress · **Complexity** M · **Depends on** —
-- **Notes:** `lib/request-validation.ts` provides the shared Zod controller-boundary parser with stable `400` field details. Schemas now cover administrator/member login, member registration, checkout creation/verification, and CMS media creation. Parsed media input strips unknown fields, does not coerce numeric sizes, and stops malformed requests before persistence. The media service also measures decoded base64 bytes instead of trusting caller-declared size, closing an upload-size bypass. Remaining work is to migrate the other mutating controllers before marking the task complete.
+- **Notes:** `lib/request-validation.ts` provides the shared Zod controller-boundary parser with stable `400` field details. Schemas now cover administrator/member login, member registration, checkout creation/verification, CMS media creation, and product create/update including embedded `prices[]`. Product validation rejects numeric strings instead of relying on service coercion, strips unknown fields, validates enums/ranges, and supplies typed defaults for embedded prices; `productService` now consumes the typed embedded-price contract without `String()`/`Number()` coercion. Media validation also measures decoded base64 bytes instead of trusting caller-declared size. Remaining work is to migrate the other mutating controllers before marking the task complete.
 - **Acceptance:** Every mutating route validates its body; malformed input returns 400 with field details.
 
 **T-1102 · Route conventions audit**

@@ -1,7 +1,7 @@
 import { productRepository } from "@/repositories/product-repository";
 import { productPriceService } from "@/services/product-price-service";
 import type {
-  CreateProductInput,
+  CreateProductWithPricesInput,
   UpdateProductInput,
   ProductRecord,
 } from "@/types";
@@ -38,9 +38,7 @@ export const productService = {
     return productRepository.findBySlug(slug);
   },
 
-  async create(
-    input: CreateProductInput & { prices?: Record<string, unknown>[] },
-  ): Promise<ProductRecord> {
+  async create(input: CreateProductWithPricesInput): Promise<ProductRecord> {
     const name = (input.name || "").trim();
     if (name.length < 2 || name.length > 100) {
       throw new Error("Name must be between 2 and 100 characters.");
@@ -77,23 +75,22 @@ export const productService = {
       metadata: (input.metadata ?? null) as never,
     })) as ProductRecord;
 
-    // Create embedded prices if provided
+    // Create embedded prices if provided. Controller validation guarantees
+    // every price already has typed values and defaults.
     if (input.prices?.length) {
       for (const p of input.prices) {
         await productPriceService.create({
           productId: product.id,
-          label: String(p.label || ""),
-          stripePriceId: String(p.stripePriceId || ""),
-          mode: (p.mode === "live" ? "live" : "test") as "test" | "live",
-          amount: Number(p.amount) || 0,
-          currency: String(p.currency || "USD"),
-          interval: p.interval ? String(p.interval) : undefined,
-          startDate: p.startDate ? String(p.startDate) : undefined,
-          endDate: p.endDate ? String(p.endDate) : undefined,
-          isDefault: Boolean(p.isDefault),
-          stripeProductId: p.stripeProductId
-            ? String(p.stripeProductId)
-            : undefined,
+          label: p.label,
+          stripePriceId: p.stripePriceId,
+          mode: p.mode,
+          amount: p.amount,
+          currency: p.currency,
+          interval: p.interval,
+          startDate: p.startDate,
+          endDate: p.endDate,
+          isDefault: p.isDefault,
+          stripeProductId: p.stripeProductId,
         });
       }
     }
