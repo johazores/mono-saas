@@ -30,7 +30,7 @@ function parseEncryptionKey(raw: string | undefined, variableName: string): Buff
   return key;
 }
 
-function getCurrentKeyVersion(): number {
+export function getCurrentEncryptionKeyVersion(): number {
   const raw = process.env.ENCRYPTION_KEY_VERSION ?? "1";
   const version = Number.parseInt(raw, 10);
   if (!Number.isSafeInteger(version) || version < 1) {
@@ -40,7 +40,7 @@ function getCurrentKeyVersion(): number {
 }
 
 function getEncryptionKey(version: number): Buffer {
-  const currentVersion = getCurrentKeyVersion();
+  const currentVersion = getCurrentEncryptionKeyVersion();
   if (version === currentVersion) {
     return parseEncryptionKey(process.env.ENCRYPTION_KEY, "ENCRYPTION_KEY");
   }
@@ -69,7 +69,7 @@ export function isEncryptedSettingValue(
 }
 
 export function encryptSettingValue(value: unknown): EncryptedSettingValue {
-  const keyVersion = getCurrentKeyVersion();
+  const keyVersion = getCurrentEncryptionKeyVersion();
   const key = getEncryptionKey(keyVersion);
   const iv = crypto.randomBytes(IV_BYTES);
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
