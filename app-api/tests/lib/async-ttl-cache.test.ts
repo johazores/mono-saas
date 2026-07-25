@@ -58,6 +58,29 @@ describe("createAsyncTtlCache", () => {
     expect(loader).toHaveBeenCalledTimes(2);
   });
 
+  it("does not let an older in-flight load restore stale data", async () => {
+    let resolveOld: ((value: string) => void) | undefined;
+    const loader = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveOld = resolve;
+          }),
+      )
+      .mockResolvedValueOnce("fresh");
+    const cache = createAsyncTtlCache(loader, 5_000);
+
+    const oldRequest = cache.get();
+    cache.invalidate();
+    await expect(cache.get()).resolves.toBe("fresh");
+
+    resolveOld?.("stale");
+    await expect(oldRequest).resolves.toBe("stale");
+    await expect(cache.get()).resolves.toBe("fresh");
+    expect(loader).toHaveBeenCalledTimes(2);
+  });
+
   it("does not cache rejected loads", async () => {
     const loader = vi
       .fn()
