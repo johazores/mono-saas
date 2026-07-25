@@ -38,7 +38,15 @@ export const credentialsAuthProvider: AuthProviderInterface = {
       email: session.user.email,
       name: session.user.name,
       emailVerified: true,
-      claims: {},
+      claims: {
+        localUser: {
+          id: session.user.id,
+          name: session.user.name,
+          email: session.user.email,
+          status: session.user.status,
+          parentId: session.user.parentId,
+        },
+      },
     };
   },
 };
