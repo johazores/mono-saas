@@ -21,6 +21,7 @@ export type TenantResolutionConfig = {
   baseDomain?: string;
   pathPrefix?: string;
   trustedHeaderName?: string;
+  trustedTimestampHeaderName?: string;
   trustedSignatureHeaderName?: string;
   trustedHeaderSecret?: string;
   maxClockSkewSeconds?: number;
