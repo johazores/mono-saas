@@ -1,7 +1,13 @@
 import { settingRepository } from "@/repositories/setting-repository";
+import {
+  isAllowedSettingKey,
+  isSecretSettingKey,
+  MASKED_SECRET_VALUE,
+} from "@/lib/setting-definitions";
 import type {
   AuthConfig,
   AuthProvider,
+  ClerkSecurityConfig,
   PublicAuthConfig,
   PaymentConfig,
   PaymentMode,
@@ -11,58 +17,72 @@ import type {
   ThemeTokens,
 } from "@/types";
 
-const ALLOWED_KEYS = new Set([
-  "auth.provider",
-  "auth.clerkPublishableKey",
-  "auth.clerkSecretKey",
-  "payment.provider",
-  "payment.mode",
-  "payment.stripe.testPublicKey",
-  "payment.stripe.testSecretKey",
-  "payment.stripe.livePublicKey",
-  "payment.stripe.liveSecretKey",
-  // Site identity
-  "site.title",
-  "site.tagline",
-  "site.favicon",
-  "site.logo",
-  "site.logoDark",
-  "site.authQuote",
-  // Theme tokens
-  "theme.primary",
-  "theme.primaryHover",
-  "theme.primaryGradient",
-  "theme.secondary",
-  "theme.secondaryHover",
-  "theme.secondaryGradient",
-  "theme.accent",
-  "theme.accentGradient",
-  "theme.background",
-  "theme.surface",
-  "theme.border",
-  "theme.text",
-  "theme.textMuted",
-  "theme.success",
-  "theme.error",
-  "theme.warning",
-  "theme.info",
-]);
-
 const AUTH_DEFAULTS: AuthConfig = {
   provider: "credentials",
   clerkPublishableKey: "",
   clerkSecretKey: "",
 };
 
+function maskSecret(key: string, value: unknown): unknown {
+  if (!isSecretSettingKey(key)) return value;
+  return value === null || value === undefined || value === ""
+    ? ""
+    : MASKED_SECRET_VALUE;
+}
+
+function normalizeAuthorizedParties(value: unknown): string[] {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+
+  const parties = rawValues
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+
+  return [...new Set(parties)];
+}
+
+function validateAuthorizedParties(value: unknown): string[] {
+  const parties = normalizeAuthorizedParties(value);
+  if (parties.length === 0) {
+    throw new Error("At least one Clerk authorized party is required.");
+  }
+
+  for (const party of parties) {
+    let url: URL;
+    try {
+      url = new URL(party);
+    } catch {
+      throw new Error(`Invalid Clerk authorized party: ${party}`);
+    }
+    if (url.origin !== party) {
+      throw new Error(
+        `Clerk authorized parties must be origins without paths: ${party}`,
+      );
+    }
+  }
+
+  return parties;
+}
+
 export const settingService = {
   async get(key: string): Promise<unknown> {
     const record = await settingRepository.get(key);
-    return record?.value ?? null;
+    return record ? maskSecret(key, record.value) : null;
   },
 
   async set(key: string, value: unknown): Promise<void> {
-    if (!ALLOWED_KEYS.has(key)) {
+    if (!isAllowedSettingKey(key)) {
       throw new Error(`Unknown setting key: ${key}`);
+    }
+
+    // The admin settings UI receives only a mask for configured secrets.
+    // Sending that same mask back means "keep the existing value".
+    if (isSecretSettingKey(key) && value === MASKED_SECRET_VALUE) {
+      return;
     }
 
     if (key === "auth.provider") {
@@ -72,6 +92,14 @@ export const settingService = {
           `Invalid auth provider. Must be one of: ${valid.join(", ")}`,
         );
       }
+    }
+
+    if (key === "auth.authorizedParties") {
+      value = validateAuthorizedParties(value);
+    }
+
+    if (key === "auth.openSignup" && typeof value !== "boolean") {
+      throw new Error("auth.openSignup must be a boolean.");
     }
 
     if (key === "payment.provider") {
@@ -106,7 +134,10 @@ export const settingService = {
 
   async getAll(): Promise<Array<{ key: string; value: unknown }>> {
     const records = await settingRepository.getAll();
-    return records.map((r) => ({ key: r.key, value: r.value }));
+    return records.map((record) => ({
+      key: record.key,
+      value: maskSecret(record.key, record.value),
+    }));
   },
 
   async getAuthConfig(): Promise<AuthConfig> {
@@ -116,7 +147,7 @@ export const settingService = {
       "auth.clerkSecretKey",
     ];
     const records = await settingRepository.getMany(keys);
-    const map = new Map(records.map((r) => [r.key, r.value]));
+    const map = new Map(records.map((record) => [record.key, record.value]));
 
     return {
       provider:
@@ -127,6 +158,26 @@ export const settingService = {
       clerkSecretKey:
         (map.get("auth.clerkSecretKey") as string) ??
         AUTH_DEFAULTS.clerkSecretKey,
+    };
+  },
+
+  async getClerkSecurityConfig(): Promise<ClerkSecurityConfig> {
+    const records = await settingRepository.getMany([
+      "auth.authorizedParties",
+      "auth.openSignup",
+    ]);
+    const map = new Map(records.map((record) => [record.key, record.value]));
+    const configuredParties = normalizeAuthorizedParties(
+      map.get("auth.authorizedParties"),
+    );
+    const fallbackParties = normalizeAuthorizedParties(
+      process.env.CLIENT_ORIGIN ?? "",
+    );
+
+    return {
+      authorizedParties:
+        configuredParties.length > 0 ? configuredParties : fallbackParties,
+      openSignup: map.get("auth.openSignup") === true,
     };
   },
 
@@ -148,7 +199,7 @@ export const settingService = {
       "payment.stripe.liveSecretKey",
     ];
     const records = await settingRepository.getMany(keys);
-    const map = new Map(records.map((r) => [r.key, r.value]));
+    const map = new Map(records.map((record) => [record.key, record.value]));
 
     const provider =
       (map.get("payment.provider") as PaymentProviderName) ?? "stripe";
@@ -177,13 +228,13 @@ export const settingService = {
 
   async getSiteConfig(): Promise<SiteConfig> {
     const records = await settingRepository.getAll();
-    const map = new Map(records.map((r) => [r.key, r.value]));
+    const map = new Map(records.map((record) => [record.key, record.value]));
 
     const theme: ThemeTokens = {};
-    for (const [key, val] of map) {
-      if (key.startsWith("theme.") && typeof val === "string" && val !== "") {
+    for (const [key, value] of map) {
+      if (key.startsWith("theme.") && typeof value === "string" && value !== "") {
         const token = key.slice(6) as keyof ThemeTokens;
-        theme[token] = val;
+        theme[token] = value;
       }
     }
 

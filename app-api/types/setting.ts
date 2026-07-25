@@ -13,6 +13,11 @@ export type AuthConfig = {
   clerkSecretKey: string;
 };
 
+export type ClerkSecurityConfig = {
+  authorizedParties: string[];
+  openSignup: boolean;
+};
+
 export type PublicAuthConfig = {
   provider: AuthProvider;
   clerkPublishableKey: string;

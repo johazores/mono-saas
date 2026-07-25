@@ -3,18 +3,18 @@
 ### WS-9 · Configuration & secrets
 
 **T-901 · Settings registry**
-- **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** T-101
-- **Notes:** Resolves F-9. Modules register their setting keys with type, validation, secret-class flag, and default. `ALLOWED_KEYS` becomes the union of registered keys — allowlist property preserved, central edit removed.
-- **Acceptance:** A new integration adds settings without editing `setting-service.ts`.
+- **Priority** P2 · **Status** Done · **Complexity** M · **Depends on** T-101
+- **Notes:** `lib/setting-definitions.ts` now owns registration, duplicate protection, allowlisting, and secret classification. `setting-service.ts` no longer contains the central key allowlist.
+- **Acceptance:** A new integration can register settings without editing `setting-service.ts`.
 
 **T-902 · Define the bootstrap env surface**
-- **Priority** P1 · **Status** Not started · **Complexity** S · **Depends on** T-101
-- **Notes:** The brief wants a minimal fixed set. Realistically: `DATABASE_URL`, `ENCRYPTION_KEY`, `ADMIN_SESSION_SECRET`, `USER_SESSION_SECRET`, `APP_ENV`. Everything else moves to the DB. Fail fast and loudly at boot if any is missing or weak.
+- **Priority** P1 · **Status** In progress · **Complexity** S · **Depends on** T-101
+- **Notes:** Encryption bootstrap variables and operational requirements are documented in `.env.example` and `docs/security.md`. Startup validation and the final surface depend on the `APP_ENV` tenancy decision.
 - **Acceptance:** Documented list; startup validation; `.env.example` matches exactly.
 
 **T-903 · Settings change audit**
-- **Priority** P2 · **Status** Not started · **Complexity** S · **Depends on** T-101
-- **Notes:** `ActivityLog` exists and is the right home. Log every settings write with actor and key — **never the value** for secret-class keys.
+- **Priority** P2 · **Status** Done · **Complexity** S · **Depends on** T-101
+- **Notes:** Setting writes log actor and key without logging values. A controller test asserts that submitted secret values never enter activity metadata.
 - **Acceptance:** Writes audited; test asserts secret values never reach the log.
 
 ---

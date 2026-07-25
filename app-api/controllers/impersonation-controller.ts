@@ -13,6 +13,7 @@ import { verifyCsrf } from "@/lib/csrf";
 import { userService } from "@/services/user-service";
 
 const clientOrigin = process.env.CLIENT_ORIGIN || "http://localhost:7000";
+const IMPERSONATION_SESSION_SECONDS = 60 * 60;
 
 export async function startImpersonationController(
   req: NextApiRequest,
@@ -41,10 +42,8 @@ export async function startImpersonationController(
     if (user.status !== "active")
       return sendError(res, "Cannot impersonate a disabled user.", 400);
 
-    // Create a user session for the target user
-    await createUserSession(userId, res);
-
-    // Set impersonation tracking cookie
+    // The target user session and tracking cookie share the same short lifetime.
+    await createUserSession(userId, res, IMPERSONATION_SESSION_SECONDS);
     setImpersonationCookie(session.admin.id, userId, res);
 
     await logActivity(req, "user.impersonate_start", {
@@ -88,10 +87,7 @@ export async function stopImpersonationController(
   }
 
   try {
-    // Clear the user session
     await clearUserSession(req, res);
-
-    // Clear the impersonation cookie
     clearImpersonationCookie(res);
 
     await logActivity(req, "user.impersonate_stop", {

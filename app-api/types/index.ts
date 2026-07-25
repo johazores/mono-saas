@@ -84,6 +84,7 @@ export type {
   SystemConfigRecord,
   AuthProvider,
   AuthConfig,
+  ClerkSecurityConfig,
   PublicAuthConfig,
   SettingRecord,
   SiteConfig,

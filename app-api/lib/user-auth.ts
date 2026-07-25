@@ -4,13 +4,20 @@ import { prisma } from "@/lib/prisma";
 import { getAppEnv } from "@/lib/env";
 import { sendError } from "@/lib/api-response";
 import { getUserSessionSecret } from "@/lib/secure-credentials";
-import { verifyClerkToken } from "@/lib/clerk-auth";
+import {
+  getClerkUserProfile,
+  verifyClerkToken,
+} from "@/lib/clerk-auth";
 import { settingService } from "@/services/setting-service";
+import { invitationRepository } from "@/repositories/invitation-repository";
 import type { AccountStatus, UserAuthSession } from "@/types";
 
 const COOKIE_NAME = "user_session";
 const IMPERSONATION_COOKIE = "admin_impersonating";
 const SESSION_DAYS = 14;
+const SESSION_SECONDS = SESSION_DAYS * 24 * 60 * 60;
+const IMPERSONATION_SECONDS = 60 * 60;
+const CLOCK_SKEW_SECONDS = 60;
 
 function hashToken(token: string) {
   return crypto
@@ -19,8 +26,8 @@ function hashToken(token: string) {
     .digest("hex");
 }
 
-function sessionExpiry() {
-  return new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+function sessionExpiry(maxAgeSeconds: number) {
+  return new Date(Date.now() + maxAgeSeconds * 1000);
 }
 
 function cookieOptions(maxAge: number) {
@@ -28,17 +35,21 @@ function cookieOptions(maxAge: number) {
   return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge};${secure}`;
 }
 
-export async function createUserSession(userId: string, res: NextApiResponse) {
+export async function createUserSession(
+  userId: string,
+  res: NextApiResponse,
+  maxAgeSeconds = SESSION_SECONDS,
+) {
   const token = crypto.randomBytes(32).toString("base64url");
   const tokenHash = hashToken(token);
 
   await prisma.userSession.create({
-    data: { userId, tokenHash, expiresAt: sessionExpiry() },
+    data: { userId, tokenHash, expiresAt: sessionExpiry(maxAgeSeconds) },
   });
 
   res.appendHeader(
     "Set-Cookie",
-    `${COOKIE_NAME}=${token}; ${cookieOptions(SESSION_DAYS * 24 * 60 * 60)}`,
+    `${COOKIE_NAME}=${token}; ${cookieOptions(maxAgeSeconds)}`,
   );
 }
 
@@ -52,7 +63,6 @@ export async function clearUserSession(
       where: { tokenHash: hashToken(token) },
     });
   }
-  // Clear both user session and impersonation cookies
   res.appendHeader("Set-Cookie", `${COOKIE_NAME}=; ${cookieOptions(0)}`);
   res.appendHeader(
     "Set-Cookie",
@@ -63,84 +73,113 @@ export async function clearUserSession(
 export async function getUserSession(
   req: NextApiRequest,
 ): Promise<UserAuthSession | null> {
-  // If admin is impersonating, always use credential-based session.
-  // Impersonation creates a user_session cookie regardless of auth provider.
   const impersonation = getImpersonationInfo(req);
 
-  let session: UserAuthSession | null;
-  if (impersonation) {
-    session = await getCredentialUserSession(req);
-  } else {
-    const authConfig = await settingService.getAuthConfig();
-    if (authConfig.provider === "clerk") {
-      session = await getClerkUserSession(req);
-    } else {
-      session = await getCredentialUserSession(req);
-    }
-  }
-
-  if (!session) return null;
-
-  // Attach impersonation info
   if (impersonation) {
     const admin = await prisma.admin.findUnique({
       where: { id: impersonation.adminId },
-      select: { name: true },
+      select: { name: true, status: true },
     });
-    if (admin) {
-      session.impersonation = {
-        adminId: impersonation.adminId,
-        adminName: admin.name,
-      };
-    }
+    if (!admin || admin.status !== "active") return null;
+
+    const session = await getCredentialUserSession(req);
+    if (!session) return null;
+    session.impersonation = {
+      adminId: impersonation.adminId,
+      adminName: admin.name,
+    };
+    return session;
   }
 
-  return session;
+  const authConfig = await settingService.getAuthConfig();
+  if (authConfig.provider === "clerk") {
+    return getClerkUserSession(req);
+  }
+  return getCredentialUserSession(req);
 }
 
 async function getClerkUserSession(
   req: NextApiRequest,
 ): Promise<UserAuthSession | null> {
   const clerkPayload = await verifyClerkToken(req);
-  if (!clerkPayload?.email) return null;
+  if (!clerkPayload?.sub) return null;
 
-  const email = clerkPayload.email.toLowerCase().trim();
   const env = await getAppEnv();
 
-  // Look up by clerkId first, then fall back to email
-  let user = clerkPayload.sub
-    ? await prisma.user.findFirst({
-        where: { clerkId: clerkPayload.sub },
-      })
-    : null;
+  // Existing linked users are resolved locally. No Clerk profile request is
+  // required on the normal authenticated request path.
+  let user = await prisma.user.findFirst({
+    where: { env, clerkId: clerkPayload.sub },
+  });
 
-  if (!user) {
-    // Check if a user with this email already exists (e.g. migrated from credentials)
-    user = await prisma.user.findUnique({
-      where: { env_email: { env, email } },
+  if (user) {
+    if (user.status !== "active") return null;
+    return buildUserAuthSession(user);
+  }
+
+  let email = clerkPayload.email;
+  let name = clerkPayload.name;
+  if (!email) {
+    const profile = await getClerkUserProfile(clerkPayload.sub);
+    email = profile?.email;
+    name = name || profile?.name;
+  }
+  if (!email) return null;
+
+  email = email.toLowerCase().trim();
+
+  // Link a previously provisioned credentials account without creating a
+  // duplicate. Do not take over an account already linked to another Clerk ID.
+  user = await prisma.user.findUnique({
+    where: { env_email: { env, email } },
+  });
+
+  if (user) {
+    if (user.clerkId && user.clerkId !== clerkPayload.sub) return null;
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: { clerkId: clerkPayload.sub },
     });
+  } else {
+    const [security, invitation] = await Promise.all([
+      settingService.getClerkSecurityConfig(),
+      invitationRepository.findPendingByEmail(email),
+    ]);
 
-    if (user) {
-      // Link existing user to Clerk
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: { clerkId: clerkPayload.sub },
-      });
-    } else {
+    if (!security.openSignup && !invitation) return null;
+
+    try {
       user = await prisma.user.create({
         data: {
           email,
           clerkId: clerkPayload.sub,
-          name: clerkPayload.name || clerkPayload.email,
-          passwordHash: "", // No password for Clerk users
+          name: name || email,
+          passwordHash: "",
           status: "active",
         },
       });
+    } catch {
+      // Handle simultaneous first requests without creating duplicate users.
+      user = await prisma.user.findUnique({
+        where: { env_email: { env, email } },
+      });
+      if (!user || (user.clerkId && user.clerkId !== clerkPayload.sub)) {
+        return null;
+      }
+      if (!user.clerkId) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { clerkId: clerkPayload.sub },
+        });
+      }
+    }
+
+    if (invitation) {
+      await invitationRepository.updateStatus(invitation.id, "accepted");
     }
   }
 
   if (user.status !== "active") return null;
-
   return buildUserAuthSession(user);
 }
 
@@ -178,7 +217,6 @@ async function buildUserAuthSession(user: {
   status: string;
   parentId: string | null;
 }): Promise<UserAuthSession> {
-  // Fetch active subscription (recurring purchase)
   let activeSub = await prisma.purchase.findFirst({
     where: {
       userId: user.id,
@@ -189,7 +227,6 @@ async function buildUserAuthSession(user: {
     orderBy: { createdAt: "desc" },
   });
 
-  // Sub-users inherit their parent's plan when they have no own subscription
   if (!activeSub && user.parentId) {
     activeSub = await prisma.purchase.findFirst({
       where: {
@@ -202,7 +239,6 @@ async function buildUserAuthSession(user: {
     });
   }
 
-  // Fetch parent info if this is a sub-user
   let parentInfo: { name: string; email: string } | null = null;
   if (user.parentId) {
     const parentUser = await prisma.user.findUnique({
@@ -247,8 +283,6 @@ export async function requireUser(
   return session;
 }
 
-// --- Impersonation helpers ---
-
 function signImpersonationPayload(payload: string): string {
   return crypto
     .createHmac("sha256", getUserSessionSecret())
@@ -261,12 +295,13 @@ export function setImpersonationCookie(
   userId: string,
   res: NextApiResponse,
 ) {
-  const payload = `${adminId}:${userId}`;
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const payload = `${adminId}:${userId}:${issuedAt}`;
   const signature = signImpersonationPayload(payload);
   const value = `${payload}:${signature}`;
   res.appendHeader(
     "Set-Cookie",
-    `${IMPERSONATION_COOKIE}=${value}; ${cookieOptions(SESSION_DAYS * 24 * 60 * 60)}`,
+    `${IMPERSONATION_COOKIE}=${value}; ${cookieOptions(IMPERSONATION_SECONDS)}`,
   );
 }
 
@@ -284,14 +319,28 @@ export function getImpersonationInfo(
   if (!raw) return null;
 
   const parts = raw.split(":");
-  if (parts.length !== 3) return null;
+  if (parts.length !== 4) return null;
 
-  const [adminId, userId, signature] = parts;
-  const expectedSig = signImpersonationPayload(`${adminId}:${userId}`);
+  const [adminId, userId, issuedAtRaw, signature] = parts;
+  const issuedAt = Number.parseInt(issuedAtRaw, 10);
+  if (!Number.isSafeInteger(issuedAt)) return null;
 
+  const now = Math.floor(Date.now() / 1000);
   if (
-    signature.length !== expectedSig.length ||
-    !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))
+    issuedAt > now + CLOCK_SKEW_SECONDS ||
+    now - issuedAt > IMPERSONATION_SECONDS
+  ) {
+    return null;
+  }
+
+  const payload = `${adminId}:${userId}:${issuedAt}`;
+  const expectedSignature = signImpersonationPayload(payload);
+  if (
+    signature.length !== expectedSignature.length ||
+    !crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expectedSignature),
+    )
   ) {
     return null;
   }
