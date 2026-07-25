@@ -2,31 +2,31 @@
 
 ### WS-0 · Architecture decisions (ADRs)
 
-Short decision records in `docs/decisions/`. Each states context, options, decision, consequences. These gate everything else.
+Short decision records in `docs/decisions/`. Each states context, options, decision, and consequences. These decisions now gate implementation rather than remaining open questions.
 
 **T-001 · ADR-001: scope key strategy**
-- **Priority** P0 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** Resolve §2. Recommendation is Option A. Nothing in WS-3+ is startable until merged.
+- **Priority** P0 · **Status** Done · **Complexity** S · **Depends on** —
+- **Notes:** Accepted replacement of `env` with `tenantId`; environments move to separate deployments/databases. The ADR includes a staged migration shape.
 - **Acceptance:** ADR merged; chosen option stated with consequences; migration shape sketched.
 
 **T-002 · ADR-002: tenancy model shape**
-- **Priority** P0 · **Status** Not started · **Complexity** S · **Depends on** T-001
-- **Notes:** Tenant ↔ Organization ↔ Team ↔ User cardinality. Does a User belong to one tenant or many? Existing `User.parentId`/`ancestors` sub-user hierarchy must be reconciled — it is a proto-tenancy and probably becomes tenant membership.
-- **Acceptance:** ERD sketch; explicit statement on user↔tenant cardinality and the fate of `parentId`.
+- **Priority** P0 · **Status** Done · **Complexity** S · **Depends on** T-001
+- **Notes:** `Tenant` is the technical isolation/billing boundary, one user-facing `Organization` belongs to each tenant, users are global identities with many organization memberships, and teams are grouping units. Existing parent/ancestor hierarchy is deprecated and migrates to memberships/entitlements.
+- **Acceptance:** ERD sketch; explicit user-to-tenant cardinality and fate of `parentId` documented.
 
 **T-003 · ADR-003: auth provider boundary**
-- **Priority** P1 · **Status** Not started · **Complexity** S · **Depends on** T-002
-- **Notes:** Define the identity contract the app depends on, so Clerk/JWT/Auth.js are swappable. Decide whether tenant membership is authoritative in Clerk Organizations or in the local DB. Local DB is strongly preferred — Clerk Orgs as source of truth re-couples exactly what the brief wants decoupled.
+- **Priority** P1 · **Status** Done · **Complexity** S · **Depends on** T-002
+- **Notes:** Providers verify identity; local `ExternalIdentity`, organization membership, invitations, RBAC, and account state remain authoritative. Clerk Organizations are optional synchronization only.
 - **Acceptance:** `AuthProviderInterface` signature agreed; membership ownership decided.
 
 **T-004 · ADR-004: boilerplate scope boundary**
-- **Priority** P1 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** See §1.3. Name what the core provides and what consuming products own. Prevents the thirteen-vertical pull.
+- **Priority** P1 · **Status** Done · **Complexity** S · **Depends on** —
+- **Notes:** Core includes reusable SaaS infrastructure. CRM, ERP, school, marketplace, booking, community, event, and other domain models remain optional modules or consuming-product code.
 - **Acceptance:** In/out list merged; referenced by future feature PRs.
 
 **T-005 · ADR-005: file storage strategy**
-- **Priority** P1 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** Resolves F-7. Object storage behind an interface (S3/R2/Supabase), with DB rows holding keys and metadata only.
+- **Priority** P1 · **Status** Done · **Complexity** S · **Depends on** —
+- **Notes:** Accepted provider-neutral object storage with private objects, signed URLs, metadata-only database rows, and an idempotent base64 migration path.
 - **Acceptance:** `StorageProviderInterface` shape agreed; migration path for existing base64 rows.
 
 ---
@@ -45,7 +45,7 @@ Short decision records in `docs/decisions/`. Each states context, options, decis
 
 **T-103 · Rotate all exposed credentials**
 - **Priority** P0 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** Any Stripe or Clerk key ever written to a DB that has been dumped, shared, or backed up must be treated as compromised. This is an external provider-dashboard operation and cannot be completed from repository code.
+- **Notes:** Any Stripe or Clerk key ever written to a database that has been dumped, shared, or backed up must be treated as compromised. This is an external provider-dashboard operation and cannot be completed from repository code.
 - **Acceptance:** Keys rotated in provider dashboards; new values written post-T-101.
 
 **T-104 · Pin Clerk `authorizedParties`**
@@ -60,43 +60,43 @@ Short decision records in `docs/decisions/`. Each states context, options, decis
 
 **T-106 · Impersonation hardening**
 - **Priority** P2 · **Status** Done · **Complexity** M · **Depends on** —
-- **Notes:** Impersonation payloads include issued-at time, expire after one hour, use a target session with the same lifetime, validate active admin status on every request, and retain existing activity logs for start/stop.
+- **Notes:** Impersonation payloads include issued-at time, expire after one hour, use a target session with the same lifetime, validate active administrator status on every request, and retain activity logs for start/stop.
 - **Acceptance:** Expired token rejected; disabled admin cannot impersonate; both events logged.
 
 **T-107 · Security review pass**
 - **Priority** P2 · **Status** In progress · **Complexity** M · **Depends on** T-101, T-301
-- **Notes:** `docs/security.md` now records implemented controls and deployment requirements. Full CSRF route coverage, distributed rate limiting, security header audit, and post-tenancy review remain.
+- **Notes:** `docs/security.md` records implemented controls and deployment requirements. Full CSRF route coverage, distributed rate limiting, security-header audit, and post-tenancy review remain.
 - **Acceptance:** Findings documented in `docs/security.md` with tasks raised for each gap.
 
 ---
 
 ### WS-2 · Documentation
 
-Split by confidence. Do not write tenancy docs before WS-3 lands.
+Current-state documentation is written from the implementation. Target-state documentation is written only after its ADR or implementation boundary is accepted.
 
 **T-201 · Verify and annotate existing docs**
 - **Priority** P1 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** The five existing docs are accurate. Do not rewrite them. Add a status header to each (`Current` / `Superseded by ADR-00X`) and correct only what drifted.
+- **Notes:** Add status and last-verified headers to the five existing guides and correct only confirmed drift.
 - **Acceptance:** Each doc carries a status header and a last-verified date.
 
 **T-202 · `docs/repository-map.md`**
-- **Priority** P1 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** Monorepo and folder structure, what each layer may import, the two apps' ports and responsibilities. Mostly extractable from what exists.
+- **Priority** P1 · **Status** Done · **Complexity** S · **Depends on** —
+- **Notes:** Documents both applications, layer responsibilities, import direction, planned app boundary, commands, and known structural debt.
 - **Acceptance:** A new contributor can place a new file correctly without asking.
 
 **T-203 · `docs/data-model.md`**
-- **Priority** P1 · **Status** Not started · **Complexity** M · **Depends on** —
-- **Notes:** All 24 models, relations, the scoping mechanism, and — importantly — the known holes from F-3 written down as constraints rather than discovered later.
+- **Priority** P1 · **Status** Done · **Complexity** M · **Depends on** —
+- **Notes:** Documents all 22 verified models, relations, non-relational references, provider coupling, current scoping mechanism, and isolation holes. It corrects the original audit count: 19 models carry `env`, while the extension lists 18 because `UserInvitation` is omitted.
 - **Acceptance:** ERD plus per-model purpose; F-3 items appear as documented limitations.
 
 **T-204 · `docs/api-design.md`**
 - **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** T-501
-- **Notes:** Route conventions, the `sendError`/`sendSuccess` envelope, auth requirements per route group, status code conventions. Currently only discoverable by reading 30 controllers.
+- **Notes:** Route conventions, response envelope, auth requirements per route group, validation, and status-code conventions.
 - **Acceptance:** Every route group documented with its auth requirement.
 
 **T-205 · Deferred architecture docs**
 - **Priority** P2 · **Status** Blocked · **Complexity** L · **Depends on** T-301, T-601, T-701, T-801
-- **Notes:** Multi-tenancy, team workspace, billing, CMS split, deployment. Written **after** each lands, from the implementation, not before it from intent.
+- **Notes:** Multi-tenancy implementation, team workspace, billing, CMS split, and deployment documents are written after each lands, from implementation rather than intent.
 - **Acceptance:** One doc per shipped workstream.
 
 ---
