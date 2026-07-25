@@ -23,6 +23,8 @@ type RelationMeta = {
   targetModel: string;
   isList: boolean;
   isRequired: boolean;
+  fromFields: string[];
+  toFields: string[];
 };
 
 const MODEL_RELATIONS = new Map(
@@ -37,6 +39,8 @@ const MODEL_RELATIONS = new Map(
             targetModel: field.type,
             isList: field.isList,
             isRequired: field.isRequired,
+            fromFields: field.relationFromFields ?? [],
+            toFields: field.relationToFields ?? [],
           } satisfies RelationMeta,
         ]),
     ),
@@ -101,6 +105,72 @@ function scopeUniqueSelector(value: unknown, env: string): void {
   }
 }
 
+function readScalarWrite(value: unknown): unknown {
+  if (isRecord(value) && Object.prototype.hasOwnProperty.call(value, "set")) {
+    return value.set;
+  }
+  return value;
+}
+
+/**
+ * Prisma's unchecked create/update inputs can write relation scalar fields
+ * such as `userId` directly, bypassing a scoped `connect`. For declared
+ * relations to scoped models, normalize non-null scalar foreign keys into a
+ * relation connect so the target selector also carries the active scope.
+ */
+function normalizeRelationScalarWrites(
+  model: string,
+  data: UnknownRecord,
+  env: string,
+): void {
+  const relations = MODEL_RELATIONS.get(model);
+  if (!relations) return;
+
+  for (const [fieldName, relation] of relations) {
+    if (
+      relation.isList ||
+      relation.fromFields.length === 0 ||
+      !isEnvScopedModel(relation.targetModel) ||
+      data[fieldName] !== undefined
+    ) {
+      continue;
+    }
+
+    const presentFields = relation.fromFields.filter((field) =>
+      Object.prototype.hasOwnProperty.call(data, field),
+    );
+    if (presentFields.length === 0) continue;
+
+    if (presentFields.length !== relation.fromFields.length) {
+      throw new Error(
+        `Incomplete relation scalar write for ${model}.${fieldName}.`,
+      );
+    }
+
+    const values = relation.fromFields.map((field) => readScalarWrite(data[field]));
+
+    // Null only removes or omits an optional relation and cannot point across
+    // scope, so leave it to Prisma's normal create/update semantics.
+    if (values.every((value) => value === null || value === undefined)) continue;
+
+    if (values.some((value) => value === null || value === undefined)) {
+      throw new Error(`Partial null relation write for ${model}.${fieldName}.`);
+    }
+
+    if (relation.toFields.length !== relation.fromFields.length) {
+      throw new Error(`Unsupported relation mapping for ${model}.${fieldName}.`);
+    }
+
+    const selector: UnknownRecord = { env };
+    relation.toFields.forEach((targetField, index) => {
+      selector[targetField] = values[index];
+    });
+
+    for (const field of relation.fromFields) delete data[field];
+    data[fieldName] = { connect: selector };
+  }
+}
+
 function scopeCreateData(model: string, value: unknown, env: string): void {
   for (const item of asArray(value)) {
     if (!isRecord(item)) continue;
@@ -132,6 +202,8 @@ function scopeUpdateData(model: string, value: unknown, env: string): void {
 }
 
 function scopeNestedWrites(model: string, data: UnknownRecord, env: string): void {
+  normalizeRelationScalarWrites(model, data, env);
+
   const relations = MODEL_RELATIONS.get(model);
   if (!relations) return;
 
