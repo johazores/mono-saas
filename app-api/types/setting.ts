@@ -11,11 +11,14 @@ export type AuthConfig = {
   provider: AuthProvider;
   clerkPublishableKey: string;
   clerkSecretKey: string;
+  authorizedParties: string[];
+  openSignup: boolean;
 };
 
 export type PublicAuthConfig = {
   provider: AuthProvider;
   clerkPublishableKey: string;
+  openSignup: boolean;
 };
 
 export type SettingRecord = {
