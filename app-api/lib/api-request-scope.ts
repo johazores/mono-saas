@@ -23,10 +23,8 @@ export function withRequestScope<T = unknown>(
   handler: NextApiHandler<T>,
 ): NextApiHandler<T> {
   return async (req, res) => {
-    const [env, requestId] = await Promise.all([
-      getAppEnv(),
-      Promise.resolve(resolveRequestId(req)),
-    ]);
+    const env = await getAppEnv();
+    const requestId = resolveRequestId(req);
     res.setHeader("X-Request-Id", requestId);
 
     return runWithRequestScope(
