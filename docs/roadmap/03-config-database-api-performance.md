@@ -23,12 +23,12 @@
 
 **T-1001 · Object storage provider**
 - **Priority** P1 · **Status** In progress · **Complexity** L · **Depends on** T-005
-- **Notes:** Provider-neutral storage contracts and the dependency-free S3 Signature Version 4 adapter are merged. Storage provider/endpoint/region/bucket/credential settings are now registered; both credential values use the existing encrypted/masked settings boundary. `settingService.getStorageConfig()` adds five-second cached configuration with storage-specific invalidation, and `getStorageProvider()` selects the configured adapter while failing closed when storage is disabled or incomplete. Remaining work is media/purchase-file service integration, ownership/tenant authorization before signed downloads, and a real configured object-store test with a file larger than 20 MB.
+- **Notes:** Provider-neutral contracts, S3-compatible SigV4 adapter, encrypted provider settings, cached config, and runtime provider registry are merged. Transitional `PurchaseFile`/`Media` storage provider/key/checksum fields now coexist with nullable legacy payloads. Storage-backed purchase downloads issue five-minute signed URLs only after existing user ownership and completed/active purchase checks; CMS media uses the same signed-read fallback while retaining its existing public file-route semantics. Legacy base64 reads remain supported, and storage objects are deleted before metadata rows. New direct-upload key creation is intentionally deferred until T-305 provides the final tenant namespace. Remaining acceptance work is tenant-aware signed upload/create flows plus a real configured object-store upload/download/delete test with a file larger than 20 MB.
 - **Acceptance:** Upload and download work through object storage; a file larger than 20 MB succeeds.
 
 **T-1002 · Migrate base64 rows**
 - **Priority** P1 · **Status** Not started · **Complexity** M · **Depends on** T-1001
-- **Notes:** Restartable migration for `PurchaseFile.data` and `Media.base64Data`, followed by removal of the payload columns after verification.
+- **Notes:** Restartable migration for nullable legacy `PurchaseFile.data` and `Media.base64Data`, verification of uploaded size/checksum, then removal of payload columns after every row has storage metadata. Storage-backed read paths already work when metadata exists.
 - **Acceptance:** No base64 payload column remains.
 
 **T-1003 · Index review**
