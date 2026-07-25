@@ -37,8 +37,8 @@
 ### WS-4 · Authentication
 
 **T-401 · Extract `AuthProviderInterface`**
-- **Priority** P1 · **Status** Not started · **Complexity** M · **Depends on** T-003
-- **Notes:** Mirror the payment registry pattern. `lib/user-auth.ts` currently branches on provider inline; that branch becomes a provider lookup returning the neutral identity contract from ADR-003.
+- **Priority** P1 · **Status** In progress · **Complexity** M · **Depends on** T-003
+- **Notes:** `lib/auth/types.ts` now implements the ADR-003 `AuthRequest`, `VerifiedIdentity`, profile capability, and provider interface. Credentials and Clerk are registered behind the same adapter registry, and `lib/user-auth.ts` dispatches through that registry without importing Clerk or branching between provider implementations. Local account resolution is separate from provider verification. The remaining blocker is the current `User.clerkId` compatibility resolver; T-305 replaces it with `ExternalIdentity(provider, subject)` so new external providers can use the same local resolver without provider-specific linkage code.
 - **Acceptance:** Adding a provider means adding one adapter file and one registry entry; no edits to shared session construction.
 
 **T-402 · Drop the per-request Clerk fetch**
