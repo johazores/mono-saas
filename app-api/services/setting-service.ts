@@ -7,6 +7,7 @@ import {
 import type {
   AuthConfig,
   AuthProvider,
+  ClerkSecurityConfig,
   PublicAuthConfig,
   PaymentConfig,
   PaymentMode,
@@ -27,6 +28,44 @@ function maskSecret(key: string, value: unknown): unknown {
   return value === null || value === undefined || value === ""
     ? ""
     : MASKED_SECRET_VALUE;
+}
+
+function normalizeAuthorizedParties(value: unknown): string[] {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+
+  const parties = rawValues
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return [...new Set(parties)];
+}
+
+function validateAuthorizedParties(value: unknown): string[] {
+  const parties = normalizeAuthorizedParties(value);
+  if (parties.length === 0) {
+    throw new Error("At least one Clerk authorized party is required.");
+  }
+
+  for (const party of parties) {
+    let url: URL;
+    try {
+      url = new URL(party);
+    } catch {
+      throw new Error(`Invalid Clerk authorized party: ${party}`);
+    }
+    if (url.origin !== party.replace(/\/$/, "")) {
+      throw new Error(
+        `Clerk authorized parties must be origins without paths: ${party}`,
+      );
+    }
+  }
+
+  return parties;
 }
 
 export const settingService = {
@@ -53,6 +92,14 @@ export const settingService = {
           `Invalid auth provider. Must be one of: ${valid.join(", ")}`,
         );
       }
+    }
+
+    if (key === "auth.authorizedParties") {
+      value = validateAuthorizedParties(value);
+    }
+
+    if (key === "auth.openSignup" && typeof value !== "boolean") {
+      throw new Error("auth.openSignup must be a boolean.");
     }
 
     if (key === "payment.provider") {
@@ -111,6 +158,26 @@ export const settingService = {
       clerkSecretKey:
         (map.get("auth.clerkSecretKey") as string) ??
         AUTH_DEFAULTS.clerkSecretKey,
+    };
+  },
+
+  async getClerkSecurityConfig(): Promise<ClerkSecurityConfig> {
+    const records = await settingRepository.getMany([
+      "auth.authorizedParties",
+      "auth.openSignup",
+    ]);
+    const map = new Map(records.map((record) => [record.key, record.value]));
+    const configuredParties = normalizeAuthorizedParties(
+      map.get("auth.authorizedParties"),
+    );
+    const fallbackParties = normalizeAuthorizedParties(
+      process.env.CLIENT_ORIGIN ?? "",
+    );
+
+    return {
+      authorizedParties:
+        configuredParties.length > 0 ? configuredParties : fallbackParties,
+      openSignup: map.get("auth.openSignup") === true,
     };
   },
 
