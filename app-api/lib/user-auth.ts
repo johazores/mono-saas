@@ -15,6 +15,7 @@ import type { AccountStatus, UserAuthSession } from "@/types";
 const COOKIE_NAME = "user_session";
 const IMPERSONATION_COOKIE = "admin_impersonating";
 const SESSION_DAYS = 14;
+const SESSION_SECONDS = SESSION_DAYS * 24 * 60 * 60;
 const IMPERSONATION_SECONDS = 60 * 60;
 const CLOCK_SKEW_SECONDS = 60;
 
@@ -25,8 +26,8 @@ function hashToken(token: string) {
     .digest("hex");
 }
 
-function sessionExpiry() {
-  return new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+function sessionExpiry(maxAgeSeconds: number) {
+  return new Date(Date.now() + maxAgeSeconds * 1000);
 }
 
 function cookieOptions(maxAge: number) {
@@ -34,17 +35,21 @@ function cookieOptions(maxAge: number) {
   return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge};${secure}`;
 }
 
-export async function createUserSession(userId: string, res: NextApiResponse) {
+export async function createUserSession(
+  userId: string,
+  res: NextApiResponse,
+  maxAgeSeconds = SESSION_SECONDS,
+) {
   const token = crypto.randomBytes(32).toString("base64url");
   const tokenHash = hashToken(token);
 
   await prisma.userSession.create({
-    data: { userId, tokenHash, expiresAt: sessionExpiry() },
+    data: { userId, tokenHash, expiresAt: sessionExpiry(maxAgeSeconds) },
   });
 
   res.appendHeader(
     "Set-Cookie",
-    `${COOKIE_NAME}=${token}; ${cookieOptions(SESSION_DAYS * 24 * 60 * 60)}`,
+    `${COOKIE_NAME}=${token}; ${cookieOptions(maxAgeSeconds)}`,
   );
 }
 
