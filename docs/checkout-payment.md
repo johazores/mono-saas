@@ -1,5 +1,12 @@
 # Checkout and Payment System
 
+- **Status:** Current implementation; provider-neutral refactor accepted but not yet implemented
+- **Last verified:** 2026-07-25
+- **Related decisions:** ADR-004, ADR-005
+- **Roadmap:** T-701 through T-705, T-1001, T-1002
+
+> This guide describes the existing Stripe-centered checkout and billing behavior. Secret keys are now encrypted and masked as documented in `security.md`. The accepted target removes Stripe-specific interface and schema types, adds authoritative provider webhooks, and moves file bytes to object storage.
+
 ## Overview
 
 The system integrates with Stripe Checkout for secure payment processing. Products can have multiple price configurations with date ranges, supporting both one-time purchases and recurring subscriptions.
@@ -35,6 +42,8 @@ Payment settings are stored in `SiteSetting` and configured via **Admin > Settin
 | `payment.stripe.testSecretKey` | Stripe test secret key      |
 | `payment.stripe.livePublicKey` | Stripe live publishable key |
 | `payment.stripe.liveSecretKey` | Stripe live secret key      |
+
+Secret-class setting values are encrypted before database persistence and are returned as a configured-value mask through administrator read endpoints.
 
 ## Checkout Flow
 
@@ -117,6 +126,8 @@ Digital products can have downloadable files attached to purchases:
 - `sizeBytes` — File size in bytes
 - `data` — Base64-encoded file content
 
+This is the current implementation. ADR-005 accepts migration to object storage; new features should not expand base64 payload usage.
+
 ### Download Endpoints
 
 - `GET /api/users/auth/downloads` — List all downloadable files for the authenticated user
@@ -168,13 +179,14 @@ A sample purchase file (`starter-guide.txt`) is attached to the demo user's Star
 
 To set up the checkout system:
 
-1. Create a [Stripe account](https://dashboard.stripe.com)
+1. Create a Stripe account
 2. Get your test API keys from the Stripe Dashboard
-3. Run the seed script: `pnpm db:seed`
-4. Navigate to **Admin > Settings** and enter your Stripe test keys
-5. Create products in **Admin > Products** and configure Stripe price IDs
-6. Or use **Admin > Products > [Product] > Prices** to add date-ranged prices
-7. Visit the landing page, add products to cart, and test the checkout flow
+3. Configure `ENCRYPTION_KEY` and deploy the secret-encryption migration before saving real provider credentials
+4. Run the seed script: `pnpm db:seed`
+5. Navigate to **Admin > Settings** and enter your Stripe test keys
+6. Create products in **Admin > Products** and configure Stripe price IDs
+7. Or use **Admin > Products > [Product] > Prices** to add date-ranged prices
+8. Visit the landing page, add products to cart, and test the checkout flow
 
 Note: Stripe price IDs in the seed data are placeholders. Replace them with real IDs from your Stripe Dashboard for actual payment testing.
 
