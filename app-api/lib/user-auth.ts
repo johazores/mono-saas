@@ -1,30 +1,22 @@
 import crypto from "crypto";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
-import { getAppEnv } from "@/lib/env";
 import { sendError } from "@/lib/api-response";
 import { getUserSessionSecret } from "@/lib/secure-credentials";
 import {
-  getClerkUserProfile,
-  verifyClerkToken,
-} from "@/lib/clerk-auth";
+  getAuthProviderRegistration,
+  hashUserSessionToken,
+  toAuthRequest,
+  USER_SESSION_COOKIE,
+} from "@/lib/auth";
 import { settingService } from "@/services/setting-service";
-import { invitationRepository } from "@/repositories/invitation-repository";
 import type { AccountStatus, UserAuthSession } from "@/types";
 
-const COOKIE_NAME = "user_session";
 const IMPERSONATION_COOKIE = "admin_impersonating";
 const SESSION_DAYS = 14;
 const SESSION_SECONDS = SESSION_DAYS * 24 * 60 * 60;
 const IMPERSONATION_SECONDS = 60 * 60;
 const CLOCK_SKEW_SECONDS = 60;
-
-function hashToken(token: string) {
-  return crypto
-    .createHmac("sha256", getUserSessionSecret())
-    .update(token)
-    .digest("hex");
-}
 
 function sessionExpiry(maxAgeSeconds: number) {
   return new Date(Date.now() + maxAgeSeconds * 1000);
@@ -41,7 +33,7 @@ export async function createUserSession(
   maxAgeSeconds = SESSION_SECONDS,
 ) {
   const token = crypto.randomBytes(32).toString("base64url");
-  const tokenHash = hashToken(token);
+  const tokenHash = hashUserSessionToken(token);
 
   await prisma.userSession.create({
     data: { userId, tokenHash, expiresAt: sessionExpiry(maxAgeSeconds) },
@@ -49,7 +41,7 @@ export async function createUserSession(
 
   res.appendHeader(
     "Set-Cookie",
-    `${COOKIE_NAME}=${token}; ${cookieOptions(maxAgeSeconds)}`,
+    `${USER_SESSION_COOKIE}=${token}; ${cookieOptions(maxAgeSeconds)}`,
   );
 }
 
@@ -57,17 +49,37 @@ export async function clearUserSession(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  const token = req.cookies[COOKIE_NAME];
+  const token = req.cookies[USER_SESSION_COOKIE];
   if (token) {
     await prisma.userSession.deleteMany({
-      where: { tokenHash: hashToken(token) },
+      where: { tokenHash: hashUserSessionToken(token) },
     });
   }
-  res.appendHeader("Set-Cookie", `${COOKIE_NAME}=; ${cookieOptions(0)}`);
+  res.appendHeader(
+    "Set-Cookie",
+    `${USER_SESSION_COOKIE}=; ${cookieOptions(0)}`,
+  );
   res.appendHeader(
     "Set-Cookie",
     `${IMPERSONATION_COOKIE}=; ${cookieOptions(0)}`,
   );
+}
+
+async function getProviderUserSession(
+  req: NextApiRequest,
+  providerName: string,
+): Promise<UserAuthSession | null> {
+  const registration = getAuthProviderRegistration(providerName);
+  const identity = await registration.provider.verify(toAuthRequest(req));
+  if (!identity) return null;
+
+  const user = await registration.resolveIdentity(
+    identity,
+    registration.provider,
+  );
+  if (!user || user.status !== "active") return null;
+
+  return buildUserAuthSession(user);
 }
 
 export async function getUserSession(
@@ -82,8 +94,12 @@ export async function getUserSession(
     });
     if (!admin || admin.status !== "active") return null;
 
-    const session = await getCredentialUserSession(req);
-    if (!session) return null;
+    // Impersonation always uses the short-lived local credentials session that
+    // was created for the target user, regardless of the configured member
+    // identity provider.
+    const session = await getProviderUserSession(req, "credentials");
+    if (!session || session.user.id !== impersonation.userId) return null;
+
     session.impersonation = {
       adminId: impersonation.adminId,
       adminName: admin.name,
@@ -92,122 +108,7 @@ export async function getUserSession(
   }
 
   const authConfig = await settingService.getAuthConfig();
-  if (authConfig.provider === "clerk") {
-    return getClerkUserSession(req);
-  }
-  return getCredentialUserSession(req);
-}
-
-async function getClerkUserSession(
-  req: NextApiRequest,
-): Promise<UserAuthSession | null> {
-  const clerkPayload = await verifyClerkToken(req);
-  if (!clerkPayload?.sub) return null;
-
-  const env = await getAppEnv();
-
-  // Existing linked users are resolved locally. No Clerk profile request is
-  // required on the normal authenticated request path.
-  let user = await prisma.user.findFirst({
-    where: { env, clerkId: clerkPayload.sub },
-  });
-
-  if (user) {
-    if (user.status !== "active") return null;
-    return buildUserAuthSession(user);
-  }
-
-  let email = clerkPayload.email;
-  let name = clerkPayload.name;
-  if (!email) {
-    const profile = await getClerkUserProfile(clerkPayload.sub);
-    email = profile?.email;
-    name = name || profile?.name;
-  }
-  if (!email) return null;
-
-  email = email.toLowerCase().trim();
-
-  // Link a previously provisioned credentials account without creating a
-  // duplicate. Do not take over an account already linked to another Clerk ID.
-  user = await prisma.user.findUnique({
-    where: { env_email: { env, email } },
-  });
-
-  if (user) {
-    if (user.clerkId && user.clerkId !== clerkPayload.sub) return null;
-    user = await prisma.user.update({
-      where: { id: user.id },
-      data: { clerkId: clerkPayload.sub },
-    });
-  } else {
-    const [security, invitation] = await Promise.all([
-      settingService.getClerkSecurityConfig(),
-      invitationRepository.findPendingByEmail(email),
-    ]);
-
-    if (!security.openSignup && !invitation) return null;
-
-    try {
-      user = await prisma.user.create({
-        data: {
-          email,
-          clerkId: clerkPayload.sub,
-          name: name || email,
-          passwordHash: "",
-          status: "active",
-        },
-      });
-    } catch {
-      // Handle simultaneous first requests without creating duplicate users.
-      user = await prisma.user.findUnique({
-        where: { env_email: { env, email } },
-      });
-      if (!user || (user.clerkId && user.clerkId !== clerkPayload.sub)) {
-        return null;
-      }
-      if (!user.clerkId) {
-        user = await prisma.user.update({
-          where: { id: user.id },
-          data: { clerkId: clerkPayload.sub },
-        });
-      }
-    }
-
-    if (invitation) {
-      await invitationRepository.updateStatus(invitation.id, "accepted");
-    }
-  }
-
-  if (user.status !== "active") return null;
-  return buildUserAuthSession(user);
-}
-
-async function getCredentialUserSession(
-  req: NextApiRequest,
-): Promise<UserAuthSession | null> {
-  const token = req.cookies[COOKIE_NAME];
-  if (!token) return null;
-
-  const session = await prisma.userSession.findUnique({
-    where: { tokenHash: hashToken(token) },
-    include: { user: true },
-  });
-
-  if (
-    !session ||
-    session.expiresAt < new Date() ||
-    session.user.status !== "active"
-  ) {
-    if (session) {
-      await prisma.userSession.deleteMany({
-        where: { tokenHash: hashToken(token) },
-      });
-    }
-    return null;
-  }
-
-  return buildUserAuthSession(session.user);
+  return getProviderUserSession(req, authConfig.provider);
 }
 
 async function buildUserAuthSession(user: {
