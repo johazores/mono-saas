@@ -189,7 +189,7 @@ describe("nested relation read scope", () => {
       AND: [
         {
           OR: [
-            { parent: { is: null } },
+            { parent: null },
             { parent: { is: { env: "dev" } } },
           ],
         },
@@ -239,7 +239,7 @@ describe("nested relation read scope", () => {
               AND: [
                 {
                   OR: [
-                    { parent: { is: null } },
+                    { parent: null },
                     { parent: { is: { env: "dev" } } },
                   ],
                 },
