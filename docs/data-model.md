@@ -11,13 +11,13 @@ The current MongoDB Prisma schema contains **22 models**:
 
 - 3 global models without `env`;
 - 19 models carrying an `env` field;
-- 18 models listed in the automatic environment-scoping extension.
+- all 19 environment-owned models now discovered automatically from `Prisma.dmmf`.
 
-`UserInvitation` carries `env` but is not included in the extension's hand-maintained scoped-model set. Its repository therefore applies environment filters explicitly only on selected methods.
+The previous hand-maintained list contained only 18 models and omitted `UserInvitation`. The scope guard now derives its model set from the schema, so adding an `env` field automatically opts a model into current environment enforcement.
 
-This document describes the schema that exists today. The accepted target model is defined by ADR-001 through ADR-005 and is clearly separated below.
+This document describes the schema that exists today. ADR-001 through ADR-005 define the accepted target.
 
-## Current relationship map
+## Relationship map
 
 ```text
 Admin 1 ─── * AdminSession
@@ -26,7 +26,7 @@ User 1 ─── * UserSession
 User 1 ─── * Purchase * ─── 1 Product 1 ─── * ProductPrice
 User 1 ─── * Membership
 Purchase 1 ─── * PurchaseFile
-User 1 ─── * User                 self-relation: parent / children
+User 1 ─── * User                 parent / children self-relation
 
 ContentType 1 ─── * ContentItem
 Taxonomy 1 ─── * TaxonomyTerm
@@ -35,159 +35,120 @@ Page                              standalone CMS page
 Media                             standalone media metadata/payload
 BlockTemplate                     standalone CMS block definition
 Feature                           standalone feature definition
-SiteSetting                       environment-scoped key/value configuration
+SiteSetting                       scoped key/value configuration
 CheckoutSession                   checkout orchestration state
 ActivityLog                       audit record
 UserInvitation                    invitation lifecycle record
 SystemConfig                      global runtime configuration
 ```
 
-Several relationships are represented only as IDs or JSON rather than Prisma relations:
+References represented only as IDs or JSON:
 
-- `Membership.sourceId` points to a purchase by convention.
-- `UserInvitation.invitedBy` points to an administrator by convention.
-- `CheckoutSession.userId` points to a user by convention.
+- `Membership.sourceId` conventionally points to a purchase.
+- `UserInvitation.invitedBy` conventionally points to an administrator.
+- `CheckoutSession.userId` conventionally points to a user.
 - `CheckoutSession.items` contains product/price references as JSON.
-- `TaxonomyTerm.parentId` represents term hierarchy without a Prisma self-relation.
+- `TaxonomyTerm.parentId` represents hierarchy without a Prisma self-relation.
 - `Taxonomy.contentTypes` stores content-type slugs as strings.
 
 ## Global models
 
 ### `Admin`
 
-Platform administrator identity.
+Platform administrator identity with unique email, password hash, free-string role, status, lockout state, and sessions.
 
-Key fields:
+Limitations:
 
-- unique email;
-- password hash;
-- free-string `role` currently documented as `admin` or `editor`;
-- active/disabled status;
-- login lockout state;
-- relation to administrator sessions.
+- `role` is not a permission relation.
+- Administrators are global and separate from tenant memberships.
 
-Current limitations:
-
-- Role is not a foreign key or permission set.
-- Administrator accounts are global across all current environments.
-
-Target direction:
-
-- Replace free-string role checks with the platform RBAC model.
-- Keep platform administrators outside ordinary tenant membership.
+Target: platform administrator RBAC under T-503.
 
 ### `AdminSession`
 
-Server-side administrator session identified by a unique token hash and expiry.
-
-Relation:
-
-```text
-AdminSession.adminId -> Admin.id
-```
+Server-side administrator session with unique token hash, expiry, and relation to `Admin`.
 
 ### `SystemConfig`
 
-Global key/value configuration. It currently stores runtime-wide values such as `APP_ENV`.
+Global key/value configuration currently used for runtime-wide values such as `APP_ENV`.
 
-Target direction:
+Target: remove runtime environment data switching after ADR-001 migration; retain only narrowly defined global bootstrap state.
 
-- `APP_ENV` runtime data switching is removed after ADR-001 migration.
-- Truly global bootstrap/configuration records remain explicit and very limited.
-
-## Identity and access models
+## Identity and access
 
 ### `User`
 
-Current application user record.
-
-Key fields:
+Current user record containing:
 
 - environment-scoped unique email;
-- optional Clerk ID indexed with environment;
-- password hash, including empty hashes for Clerk-created users;
-- provider-specific `stripeCustomerId`;
-- active/disabled and lockout state;
-- phone and JSON address;
+- optional indexed Clerk ID;
+- password hash;
+- Stripe customer ID;
+- status and lockout state;
+- phone/address profile data;
 - parent/ancestor hierarchy;
-- relations to sessions, purchases, memberships, parent, and children.
+- sessions, purchases, and entitlements.
 
-Current constraints:
+Constraints:
 
 ```text
 unique(env, email)
 index(env, clerkId)
 ```
 
-Current limitations:
+Limitations:
 
-- Identity, payment-provider reference, hierarchy, and authorization concerns are mixed in one record.
-- `clerkId` is indexed but is not unique within an environment.
-- `stripeCustomerId` couples the schema to one provider.
-- Parent/ancestor hierarchy cannot represent multi-organization membership or contextual roles.
+- provider identity, billing reference, hierarchy, and profile concerns are mixed;
+- `clerkId` is not unique inside an environment;
+- `stripeCustomerId` is provider-specific;
+- parent/ancestor hierarchy cannot represent contextual multi-workspace roles.
 
 Accepted target:
 
-- `User` becomes a global identity/profile.
-- Provider subjects move to `ExternalIdentity`.
-- Tenant access moves to `OrganizationMembership`.
-- Parent/ancestor fields are migrated and removed.
+- global `User` identity/profile;
+- provider subjects in `ExternalIdentity`;
+- access through `OrganizationMembership`;
+- remove `parentId` and `ancestors` after migration.
 
 ### `UserSession`
 
-Server-side credentials session with token hash and expiry.
-
-Relation:
-
-```text
-UserSession.userId -> User.id
-```
-
-It carries `env`, but its token hash is globally unique.
+Credentials session with token hash, expiry, and relation to `User`.
 
 ### `UserInvitation`
 
-Invitation record with email, optional name, unique token hash, lifecycle status, expiry, and inviter ID.
+Invitation record with email, optional name, unique token hash, status, expiry, and inviter ID.
 
-Current index:
+Index:
 
 ```text
 index(env, email)
 ```
 
-Important scoping note:
+Current scope behavior:
 
-- The model carries `env`.
-- It is missing from `ENV_SCOPED_MODELS` in `lib/prisma.ts`.
-- Repository methods therefore cannot assume automatic filtering.
-- Current security work explicitly scopes pending-email lookup and listing, while token and ID operations depend on globally unique token hashes or trusted internal IDs.
+- automatically included because the Prisma model contains `env`;
+- top-level active environment is enforced by the Prisma scope guard;
+- pending-email lookup and listing also carry explicit repository filters.
 
-Accepted target:
+Target: add tenant, organization, optional team, and role targets; acceptance creates organization membership.
 
-- Add tenant, organization, optional team, and role targets.
-- Treat invitation acceptance as organization membership creation.
-
-## Audit and configuration models
+## Audit and configuration
 
 ### `ActivityLog`
 
 Append-oriented audit record containing actor, action, resource, request metadata, and optional JSON metadata.
 
-Current limitations:
+Limitations:
 
-- No schema indexes are defined.
-- Retention policy is not represented.
-- Actor and resource relationships are intentionally loose, but this requires disciplined metadata conventions.
+- no schema indexes;
+- no retention policy;
+- loose actor/resource references require naming discipline.
 
-Target direction:
-
-- Add tenant and request IDs.
-- Index tenant/time, actor/time, and resource/time hot paths after tenancy migration.
-- Define retention and archival policy.
+Target: tenant/request IDs, hot-path indexes, and retention policy.
 
 ### `SiteSetting`
 
-Environment-scoped key/value configuration.
+Scoped key/value configuration.
 
 Constraint:
 
@@ -195,13 +156,9 @@ Constraint:
 unique(env, key)
 ```
 
-Secret-class values are now encrypted at the repository boundary. Admin read paths return a mask rather than decrypted credentials.
+Secret-class values are encrypted at the repository boundary. Administrator read paths return a configured-value mask.
 
-Target direction:
-
-- Replace `env` with `tenantId` for tenant settings.
-- Keep platform-global bootstrap values outside this model.
-- Continue registry-based allowlisting, validation, secret classification, and audit logging.
+Target: replace `env` with `tenantId`, preserve registry allowlisting, encryption, validation, and audit logging.
 
 ### `Feature`
 
@@ -213,16 +170,13 @@ Constraint:
 unique(env, key)
 ```
 
-Target direction:
+Target: decide whether definitions are global with tenant overrides or tenant-owned; entitlements must attach to tenant plans/memberships rather than parent-user traversal.
 
-- Decide during tenant migration whether feature definitions are global catalog entries with tenant overrides or tenant-owned records.
-- Entitlements should attach to tenant plans/memberships rather than parent-user traversal.
-
-## Commerce and billing models
+## Commerce and billing
 
 ### `Product`
 
-Purchasable product with type, payment model, local display price, feature keys, sub-user limit, metadata, and provider-specific Stripe product IDs.
+Purchasable item with type, payment model, display price, feature keys, sub-user limit, metadata, and Stripe product IDs.
 
 Relations:
 
@@ -237,20 +191,17 @@ Constraint:
 unique(env, slug)
 ```
 
-Current limitations:
+Limitations:
 
-- Stripe test/live product IDs are schema fields.
-- `maxSubUsers` belongs to the deprecated hierarchical user model.
-- `price` can conflict conceptually with `ProductPrice` as the active external price source.
+- provider IDs are schema fields;
+- `maxSubUsers` belongs to the deprecated hierarchy;
+- local `price` overlaps conceptually with `ProductPrice`.
 
-Target direction:
-
-- Replace provider fields with provider-keyed external references.
-- Express seat/member limits as plan entitlements.
+Target: provider-keyed external references and tenant plan entitlements.
 
 ### `ProductPrice`
 
-Date-bounded price record containing amount, currency, interval, test/live mode, default state, and a required Stripe price ID.
+Date-bounded price with amount, currency, interval, mode, default state, and required Stripe price ID.
 
 Relation:
 
@@ -258,18 +209,11 @@ Relation:
 ProductPrice.productId -> Product.id
 ```
 
-Current limitations:
-
-- Required `stripePriceId` prevents non-Stripe price records.
-- Mode represents provider test/live state rather than a generic internal lifecycle.
-
-Target direction:
-
-- Store neutral price data and separate external provider references.
+Target: neutral price data plus separate provider external references.
 
 ### `Purchase`
 
-Local purchase/subscription record connecting user and product, with status, amount, currency, provider reference, active dates, cancellation, files, and metadata.
+Purchase/subscription record connecting user and product with status, amount, currency, external ID, active dates, cancellation, files, and metadata.
 
 Relations:
 
@@ -279,91 +223,55 @@ Purchase.productId -> Product.id
 Purchase 1 -> many PurchaseFile
 ```
 
-Current limitations:
+Limitations:
 
-- Purchase ownership is user-centric rather than tenant/billing-account-centric.
-- `externalId` lacks provider and mode dimensions.
-- Provider webhooks are not yet the authoritative lifecycle path.
+- user-centric rather than tenant billing-account ownership;
+- `externalId` lacks provider/mode dimensions;
+- browser return verification remains important because provider webhooks are not yet authoritative.
 
 ### `PurchaseFile`
 
 Downloadable file associated with a purchase.
 
-Relation:
+Current limitation: `data` stores base64 bytes in MongoDB.
 
-```text
-PurchaseFile.purchaseId -> Purchase.id
-```
-
-Current limitation:
-
-- `data` stores base64 file bytes in MongoDB.
-
-Accepted target:
-
-- File bytes move to object storage under ADR-005.
-- The database retains storage key, provider, size, mime type, checksum, and metadata.
+Accepted target: ADR-005 object storage with provider, key, size, mime type, checksum, and metadata only.
 
 ### `Membership`
 
-Current feature grant record linked to a user. `sourceId` conventionally points to a purchase.
+Current feature grant linked to a user; `sourceId` conventionally points to a purchase.
 
-Current limitations:
+This is an entitlement, not an organization membership. The name will conflict with the workspace model.
 
-- This is an entitlement record, not an organization membership.
-- The name will conflict with the accepted workspace membership model.
-- Source relationship is not enforced by Prisma.
-
-Target direction:
-
-- Rename or replace this concept with an explicit entitlement/grant model.
-- Reserve `OrganizationMembership` and `TeamMembership` for access relationships.
+Target: rename or replace with explicit entitlement/grant records. Reserve `OrganizationMembership` and `TeamMembership` for access.
 
 ### `CheckoutSession`
 
-Checkout orchestration record with provider session ID, optional user/guest identity, JSON line items, status, provider name, and metadata.
+Checkout orchestration record with provider session ID, optional user/guest identity, JSON line items, status, provider, and metadata.
 
-Current limitation:
+Limitations:
 
-- `sessionId` is globally unique without provider/mode dimension.
-- User and product references inside the model are not relationally enforced.
+- globally unique session ID without provider/mode dimensions;
+- user/product references are not relationally enforced;
+- webhook event/idempotency records are absent.
 
-Target direction:
-
-- Use provider-neutral checkout identifiers and provider-scoped external references.
-- Webhook idempotency and event records become part of the billing architecture.
-
-## CMS models
+## CMS
 
 ### `Page`
 
-Standalone CMS page with environment-scoped slug, draft/published status, homepage flag, SEO metadata, and JSON block content.
+Standalone CMS page with scoped slug, status, homepage flag, SEO metadata, and JSON blocks.
 
-Constraint:
-
-```text
-unique(env, slug)
-```
+Constraint: `unique(env, slug)`.
 
 ### `ContentType`
 
-Dynamic content schema definition with fields and behavior stored as JSON, list-display configuration, public routing configuration, status, and ordering.
+Dynamic content schema with JSON field definitions, list configuration, public routing settings, status, ordering, and content items.
 
-Relation:
-
-```text
-ContentType 1 -> many ContentItem
-```
-
-Constraint:
-
-```text
-unique(env, slug)
-```
+Constraint: `unique(env, slug)`.
 
 ### `ContentItem`
 
-Entry belonging to a content type. It stores both `contentTypeId` and denormalized `contentTypeSlug`, flexible JSON data, slug, title, status, and ordering.
+Entry belonging to a content type with denormalized content-type slug, slug, title, JSON data, status, and ordering.
 
 Constraints:
 
@@ -372,30 +280,20 @@ unique(env, contentTypeSlug, slug)
 index(env, contentTypeSlug, status)
 ```
 
-Current limitation:
+Limitations:
 
-- Relation scope is not automatically enforced for nested reads.
-- Denormalized slug requires consistency when a content type is renamed.
+- relation scope still needs explicit tenant-isolation proof;
+- denormalized content-type slug must stay synchronized.
 
 ### `Taxonomy`
 
 Taxonomy definition with hierarchy flag, associated content-type slugs, status, terms, and ordering.
 
-Constraint:
-
-```text
-unique(env, slug)
-```
+Constraint: `unique(env, slug)`.
 
 ### `TaxonomyTerm`
 
 Term belonging to a taxonomy with optional parent ID and image URL.
-
-Relation:
-
-```text
-TaxonomyTerm.taxonomyId -> Taxonomy.id
-```
 
 Constraints:
 
@@ -404,69 +302,54 @@ unique(env, taxonomyId, slug)
 index(env, taxonomyId, parentId)
 ```
 
-Current limitation:
-
-- Parent hierarchy is not a declared self-relation.
-- Nested taxonomy relations depend on correct scope enforcement.
+Limitations: parent hierarchy is not a declared self-relation; relation isolation remains part of T-303.
 
 ### `Media`
 
-Media metadata with upload/external source, names, URL, mime type, size, media type, alt text, and optional base64 payload.
+Media metadata with source, names, URL, mime type, size, type, alt text, and optional base64 payload.
 
-Current limitation:
-
-- `base64Data` stores file bytes in MongoDB.
-
-Accepted target:
-
-- Object storage under ADR-005; retain metadata and storage key only.
+Accepted target: ADR-005 object storage; retain metadata and storage key only.
 
 ### `BlockTemplate`
 
-Dynamic CMS block definition containing field schema, defaults, optional preview, category, status, and ordering.
+Dynamic CMS block definition containing field schema, defaults, preview, category, status, and ordering.
 
-Constraint:
+Constraint: `unique(env, slug)`.
+
+## Current scope guard
+
+`lib/prisma.ts` uses a pure helper in `lib/prisma-scope.ts` plus a Prisma query extension.
+
+### Model discovery
 
 ```text
-unique(env, slug)
+Prisma.dmmf.datamodel.models
+  -> models containing field "env"
+  -> scoped model set
 ```
 
-## Current scoping mechanism
+This removes the silent omission risk from a hand-maintained list.
 
-`lib/prisma.ts` wraps the base Prisma client with a `$allOperations` query extension. For models in a hardcoded set it:
+### Enforced behavior
 
-- adds `env` to selected top-level `where` objects when the caller omitted it;
-- adds `env` to top-level create data;
-- adds `env` to each top-level create-many item;
-- adds `env` to the create side of upsert.
+For scoped models the active environment:
 
-## Known isolation limitations
+- is added to top-level read/update/delete filters;
+- overwrites caller-supplied top-level `env`;
+- overwrites explicit `env` values inside logical, relation, and compound unique filters;
+- overwrites `env` in create, create-many, update, update-many, and both upsert data branches;
+- creates a scoped `where` for operations such as `findFirst` when none exists.
 
-These limitations are acceptable only for the current deployment-wide environment partition. They are release blockers for tenant data.
+### Remaining isolation limitations
 
-### Hand-maintained model list
+These are release blockers for tenant data:
 
-A model with `env` can be omitted silently. `UserInvitation` demonstrates the problem today.
-
-### Caller override
-
-When a caller supplies `env`, the extension preserves it. Caller-controlled query data could therefore select a different scope.
-
-### Top-level operations only
-
-Nested `include`, `select`, relation filters, and nested writes do not receive independent scope enforcement.
-
-### Module-level scope state
-
-`lib/env.ts` caches the selected environment in module-level mutable state. This is valid only because the environment is deployment-wide. It must not be copied for per-request tenant context.
-
-### Base-client bypass
-
-`basePrisma` bypasses automatic scoping. It is appropriate only for explicit global infrastructure, controlled migrations, tests, and the future audited platform-admin client.
+1. Missing scope is not automatically added to arbitrary nested `include`, `select`, relation, or nested-write objects. Prisma model filters and JSON filter objects cannot be safely distinguished by a generic runtime walker.
+2. `lib/env.ts` uses module-level mutable cache state. Tenant context must use per-request `AsyncLocalStorage`.
+3. `basePrisma` bypasses automatic scope and must remain limited to global infrastructure, controlled migrations/tests, and a future audited platform-admin client.
+4. Real tenant isolation still requires two-tenant database integration tests.
 
 ## Accepted target additions
-
-The accepted architecture introduces:
 
 ```text
 Tenant
@@ -480,10 +363,8 @@ Permission
 RolePermission or equivalent permission set
 ProviderExternalReference
 StorageObject metadata
-WebhookEvent / idempotency records
+WebhookEvent and idempotency records
 ```
-
-Names may be refined during implementation, but their responsibilities and boundaries are fixed by the ADRs.
 
 ## Migration order
 
@@ -491,12 +372,15 @@ Names may be refined during implementation, but their responsibilities and bound
 2. Add global user-to-organization memberships and external identities.
 3. Backfill existing environment datasets and user hierarchy.
 4. Establish per-request tenant context.
-5. Replace the hardcoded scope set and close nested/caller-override paths.
-6. Prove isolation with two-tenant integration tests.
+5. Adapt the schema-derived guard from `env` to `tenantId`.
+6. Close nested relation/write paths and prove isolation with two tenants.
 7. Remove environment scoping and deprecated hierarchy fields.
 8. De-provider the billing schema.
 9. Move file payloads to object storage.
 
-## Accuracy corrections to the original audit
+## Verified audit corrections
 
-The schema currently has 22 models, not 24. Nineteen carry `env`; the automatic extension lists 18 because `UserInvitation` is omitted. Roadmap and future implementation work should use these verified counts until the schema changes.
+- The schema contains 22 models, not 24.
+- Nineteen models carry `env`.
+- The previous hardcoded extension listed eighteen and omitted `UserInvitation`.
+- The current guard derives all nineteen directly from the Prisma schema and rejects caller-selected scope values.

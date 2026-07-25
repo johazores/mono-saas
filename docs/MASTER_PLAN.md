@@ -35,7 +35,7 @@ Two Next.js 16 applications managed by root pnpm scripts, with MongoDB through P
 
 - **`app-api`** (port 7001) — Pages Router API with the established flow `pages/api` → `controllers` → `services` → `repositories`. Its `app/` directory currently contains placeholders for the future administrator shell.
 - **`app-client`** (port 7000) — App Router application with administrator, public, and member route groups.
-- **Database** — 22 Prisma models. Nineteen carry `env`; the automatic scoping extension lists eighteen because `UserInvitation` is omitted.
+- **Database** — 22 Prisma models. Nineteen carry `env`, and all nineteen are now discovered automatically from `Prisma.dmmf` by the current scope guard.
 - **Tests** — Vitest suites run through the API `prebuild` hook. Most current tests mock repositories; route/database integration coverage remains limited.
 
 The layering is genuinely good and consistently applied. Services do not touch Prisma directly, naming is generally kebab-case, and backend types are centralized. This is a strong starting point for the boilerplate.
@@ -67,17 +67,22 @@ Nineteen models carry `env: "dev" | "production"`. Environment partitioning occu
 
 ADR-001 accepts replacement of `env` with `tenantId`. Development, staging, and production will use separate deployments and databases.
 
-**F-3 — The current scoping extension is unsafe for tenancy. `P0` — Open**
+**F-3 — The current scoping extension is unsafe for tenancy. `P0` — Partially resolved**
 
-Known issues:
+Resolved in the current environment guard:
 
-1. Nested relation reads and writes are not independently scoped.
-2. Caller-supplied `env` is preserved instead of overwritten.
-3. The scoped-model list is hand-maintained; `UserInvitation` is already omitted.
-4. Scope resolution uses module-level mutable state suitable only for a deployment-wide environment.
-5. `basePrisma` can bypass the extension.
+- scoped models are derived from the Prisma schema rather than a hand-maintained list;
+- `UserInvitation` is automatically included;
+- caller-supplied scope is overwritten in top-level, logical, relation-filter, and compound-unique filters;
+- create, update, create-many, update-many, and upsert data cannot move a record into a caller-selected environment;
+- `findFirst` and similar operations receive a scope filter even when the caller supplied no `where`.
 
-These are survivable for the current environment partition but release blockers for tenant data.
+Remaining release blockers for tenant data:
+
+1. Missing scope is not independently added to arbitrary nested `include`, `select`, relation, and nested-write trees.
+2. Scope resolution still uses module-level mutable state suitable only for a deployment-wide environment.
+3. `basePrisma` bypasses the guard and requires a narrow audited platform-admin boundary.
+4. Real two-tenant database integration tests do not exist.
 
 **F-4 — Stripe coupling reaches into the schema. `P1` — Open**
 
@@ -158,7 +163,7 @@ Detailed tasks, dependencies, notes, and acceptance criteria are split into focu
 ## 4. Current execution sequence
 
 1. **External rollout for T-101/T-103** — configure encryption key, migrate live rows, and rotate exposed provider credentials.
-2. **T-301 → T-304** — establish per-request tenant context and close every scope-enforcement hole before tenant data exists.
+2. **T-301 + T-303** — establish per-request tenant context and close missing nested relation/write scope before tenant data exists. T-302 and T-304 are complete in the current guard.
 3. **T-305 + T-1301** — migrate the schema and prove two-tenant isolation.
 4. **T-501 + T-502** — implement permission model and controller policy layer.
 5. **T-601 + T-602** — implement tenant workspace models and invitation flow.
@@ -178,7 +183,7 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-0 Decisions | 5 | 5 |
 | WS-1 Security | 7 | 4 |
 | WS-2 Documentation | 5 | 2 |
-| WS-3 Multi-tenancy | 6 | 0 |
+| WS-3 Multi-tenancy | 6 | 2 |
 | WS-4 Authentication | 3 | 1 |
 | WS-5 Authorization | 3 | 0 |
 | WS-6 Team workspace | 3 | 0 |
@@ -191,6 +196,6 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-13 Testing | 2 | 0 |
 | WS-14 Production | 3 | 0 |
 | WS-15 Tech debt | 5 | 0 |
-| **Total** | **60** | **14** |
+| **Total** | **60** | **16** |
 
 `In progress` and externally blocked work is not counted as done. The workstream files contain the authoritative status of each task.
