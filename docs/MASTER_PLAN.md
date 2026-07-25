@@ -103,7 +103,7 @@ Remaining work:
 
 **F-5 — Clerk sessions performed a profile network request on every authenticated request. `P1` — Resolved**
 
-Returning linked users now resolve from the verified provider subject and local database. Profile retrieval occurs only when a new identity needs linking/provisioning and required claims are absent; the fallback is cached. Member and administrator session verification now both implement the ADR-003 `AuthProviderInterface`; administrator account state and role checks remain local and separate.
+Returning linked users now resolve from the verified provider subject and local database. Profile retrieval occurs only when a new identity needs linking/provisioning and required claims are absent; the fallback is cached. Member and administrator session verification both implement the ADR-003 `AuthProviderInterface`; administrator account state and role checks remain local and separate. Member session enrichment now uses one top-level Prisma query for the user, active recurring plan, parent identity, and parent-plan fallback rather than up to three additional application-level queries.
 
 **F-6 — Clerk auto-provisioning was open and incompletely scoped. `P1` — Resolved**
 
@@ -200,10 +200,10 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-9 Configuration | 3 | 2 |
 | WS-10 Database | 3 | 0 |
 | WS-11 API | 2 | 0 |
-| WS-12 Performance | 2 | 1 |
+| WS-12 Performance | 2 | 2 |
 | WS-13 Testing | 2 | 0 |
 | WS-14 Production | 3 | 0 |
 | WS-15 Tech debt | 5 | 2 |
-| **Total** | **60** | **21** |
+| **Total** | **60** | **22** |
 
 `In progress` and externally blocked work is not counted as done. The workstream files contain the authoritative status of each task.
