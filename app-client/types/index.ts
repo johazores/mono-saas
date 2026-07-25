@@ -74,8 +74,8 @@ export type {
 } from "./checkout";
 export type { PurchaseDownload, DownloadFile } from "./download";
 export type {
-  StripeSubscription,
-  StripeInvoice,
+  ProviderSubscription,
+  ProviderInvoice,
   BillingStatus,
 } from "./billing";
 export type { SiteConfig, ThemeTokens } from "./site-config";
