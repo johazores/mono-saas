@@ -84,13 +84,15 @@ Remaining release blockers for tenant data:
 3. `basePrisma` bypasses the guard and requires a narrow audited platform-admin boundary.
 4. Real two-tenant database integration tests do not exist.
 
-**F-4 — Stripe coupling reaches into the schema. `P1` — Open**
+**F-4 — Stripe coupling reaches into the schema. `P1` — Interface resolved, schema and lifecycle open**
 
-The payment directory has a useful interface and registry shape, but:
+The payment-provider contract now returns provider-neutral subscription and invoice records. Raw Stripe API shapes are isolated inside the Stripe adapter boundary.
 
-- WooCommerce remains disabled in the registry;
-- subscription and invoice methods return Stripe-specific types;
-- `User`, `Product`, and `ProductPrice` contain Stripe-specific fields;
+Remaining work:
+
+- WooCommerce is still disabled in the registry;
+- `User`, `Product`, and `ProductPrice` still contain Stripe-specific fields;
+- some compatibility service and response names still mention Stripe until T-702;
 - checkout completion lacks provider webhook authority and idempotent event handling.
 
 **F-5 — Clerk sessions performed a profile network request on every authenticated request. `P1` — Resolved**
@@ -168,7 +170,7 @@ Detailed tasks, dependencies, notes, and acceptance criteria are split into focu
 4. **T-501 + T-502** — implement permission model and controller policy layer.
 5. **T-601 + T-602** — implement tenant workspace models and invitation flow.
 6. **T-401 + T-403** — finish the provider-neutral authentication registry for member and administrator contexts.
-7. **T-701 + T-702 + T-705** — neutralize billing types/schema and add authoritative webhooks.
+7. **T-702 + T-705** — remove provider fields from the billing schema and add authoritative webhooks. T-701 is complete.
 8. **T-1001 + T-1002** — implement object storage and remove base64 payload columns.
 9. **T-801 + T-802** — move administrator presentation into `app-api` and extract shared UI.
 
@@ -187,7 +189,7 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-4 Authentication | 3 | 1 |
 | WS-5 Authorization | 3 | 0 |
 | WS-6 Team workspace | 3 | 0 |
-| WS-7 Billing | 5 | 0 |
+| WS-7 Billing | 5 | 1 |
 | WS-8 CMS refactor | 3 | 0 |
 | WS-9 Configuration | 3 | 2 |
 | WS-10 Database | 3 | 0 |
@@ -196,6 +198,6 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-13 Testing | 2 | 0 |
 | WS-14 Production | 3 | 0 |
 | WS-15 Tech debt | 5 | 0 |
-| **Total** | **60** | **16** |
+| **Total** | **60** | **17** |
 
 `In progress` and externally blocked work is not counted as done. The workstream files contain the authoritative status of each task.

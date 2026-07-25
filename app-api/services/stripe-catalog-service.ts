@@ -2,8 +2,8 @@ import { getPaymentConfig } from "@/lib/payment";
 import type {
   StripeProductResponse,
   StripePriceResponse,
-  StripeList,
-} from "@/lib/payment/types";
+  StripeListResponse,
+} from "@/lib/payment/stripe-types";
 import type {
   StripeProductListResult,
   StripeProductDetailResult,
@@ -13,22 +13,19 @@ import type {
 const STRIPE_API = "https://api.stripe.com/v1";
 
 async function stripeGet<T>(path: string, secretKey: string): Promise<T> {
-  const res = await fetch(`${STRIPE_API}${path}`, {
+  const response = await fetch(`${STRIPE_API}${path}`, {
     headers: { Authorization: `Bearer ${secretKey}` },
   });
-  const json = await res.json();
+  const json = await response.json();
 
-  if (!res.ok) {
-    const msg = json?.error?.message ?? `Stripe API error: ${res.status}`;
-    throw new Error(msg);
+  if (!response.ok) {
+    const message =
+      json?.error?.message ?? `Stripe API error: ${response.status}`;
+    throw new Error(message);
   }
 
   return json as T;
 }
-
-/* ------------------------------------------------------------------ */
-/* Service methods                                                     */
-/* ------------------------------------------------------------------ */
 
 async function requireConfig() {
   const config = await getPaymentConfig();
@@ -42,18 +39,18 @@ async function requireConfig() {
 
 async function listProducts(): Promise<StripeProductListResult> {
   const config = await requireConfig();
-  const data = await stripeGet<StripeList<StripeProductResponse>>(
+  const data = await stripeGet<StripeListResponse<StripeProductResponse>>(
     "/products?active=true&limit=100",
     config.secretKey,
   );
 
-  const items = (data.data ?? []).map((p) => ({
-    id: p.id,
-    name: p.name,
-    description: p.description ?? null,
-    images: p.images ?? [],
-    active: p.active,
-    metadata: p.metadata ?? {},
+  const items = (data.data ?? []).map((product) => ({
+    id: product.id,
+    name: product.name,
+    description: product.description ?? null,
+    images: product.images ?? [],
+    active: product.active,
+    metadata: product.metadata ?? {},
   }));
 
   return { items, mode: config.mode };
@@ -69,7 +66,7 @@ async function getProduct(
       `/products/${encodeURIComponent(productId)}`,
       config.secretKey,
     ),
-    stripeGet<StripeList<StripePriceResponse>>(
+    stripeGet<StripeListResponse<StripePriceResponse>>(
       `/prices?product=${encodeURIComponent(productId)}&active=true&limit=100`,
       config.secretKey,
     ),
@@ -84,14 +81,14 @@ async function getProduct(
     metadata: productData.metadata ?? {},
   };
 
-  const prices = (pricesData.data ?? []).map((p) => ({
-    id: p.id,
-    amount: typeof p.unit_amount === "number" ? p.unit_amount / 100 : 0,
-    currency: (p.currency ?? "usd").toUpperCase(),
-    interval: p.recurring?.interval ?? null,
-    nickname: p.nickname ?? null,
-    type: p.type,
-    active: p.active,
+  const prices = (pricesData.data ?? []).map((price) => ({
+    id: price.id,
+    amount: typeof price.unit_amount === "number" ? price.unit_amount / 100 : 0,
+    currency: (price.currency ?? "usd").toUpperCase(),
+    interval: price.recurring?.interval ?? null,
+    nickname: price.nickname ?? null,
+    type: price.type,
+    active: price.active,
   }));
 
   return { product, prices, mode: config.mode };

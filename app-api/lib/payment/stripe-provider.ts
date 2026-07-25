@@ -5,17 +5,24 @@ import type {
   CreateSessionResult,
   VerifiedSession,
   BillingPortalResult,
-  StripeSubscription,
-  StripeInvoice,
-  StripeSession,
-  StripeLineItem,
+  ProviderSubscription,
+  ProviderInvoice,
 } from "./types";
+import type {
+  StripeSessionResponse,
+  StripeLineItemsResponse,
+  StripeSubscriptionResponse,
+  StripeInvoiceResponse,
+  StripeListResponse,
+} from "./stripe-types";
 
 const STRIPE_API = "https://api.stripe.com/v1";
 
 function encodeForm(data: Record<string, string>): string {
   return Object.entries(data)
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .map(([key, value]) =>
+      `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
+    )
     .join("&");
 }
 
@@ -34,12 +41,13 @@ async function stripeRequest<T>(
     options.body = encodeForm(body);
   }
 
-  const res = await fetch(`${STRIPE_API}${path}`, options);
-  const json = await res.json();
+  const response = await fetch(`${STRIPE_API}${path}`, options);
+  const json = await response.json();
 
-  if (!res.ok) {
-    const msg = json?.error?.message ?? `Stripe API error: ${res.status}`;
-    throw new Error(msg);
+  if (!response.ok) {
+    const message =
+      json?.error?.message ?? `Stripe API error: ${response.status}`;
+    throw new Error(message);
   }
 
   return json as T;
@@ -56,27 +64,24 @@ export const stripeProvider: PaymentProviderInterface = {
       cancel_url: input.cancelUrl,
     };
 
-    // Add line items
-    input.lineItems.forEach((item, i) => {
-      body[`line_items[${i}][price]`] = item.priceId;
-      body[`line_items[${i}][quantity]`] = String(item.quantity);
+    input.lineItems.forEach((item, index) => {
+      body[`line_items[${index}][price]`] = item.priceId;
+      body[`line_items[${index}][quantity]`] = String(item.quantity);
     });
 
-    // Customer: use existing Stripe customer or email for guest
     if (input.customerId) {
       body.customer = input.customerId;
     } else if (input.customerEmail) {
       body.customer_email = input.customerEmail;
     }
 
-    // Pass internal metadata
     if (input.metadata) {
       for (const [key, value] of Object.entries(input.metadata)) {
         body[`metadata[${key}]`] = value;
       }
     }
 
-    const session = await stripeRequest<StripeSession>(
+    const session = await stripeRequest<StripeSessionResponse>(
       "/checkout/sessions",
       config.secretKey,
       body,
@@ -92,13 +97,11 @@ export const stripeProvider: PaymentProviderInterface = {
     sessionId: string,
     config: PaymentConfig,
   ): Promise<VerifiedSession> {
-    const session = await stripeRequest<StripeSession>(
+    const session = await stripeRequest<StripeSessionResponse>(
       `/checkout/sessions/${encodeURIComponent(sessionId)}`,
       config.secretKey,
     );
-
-    // Fetch line items
-    const items = await stripeRequest<StripeLineItem>(
+    const items = await stripeRequest<StripeLineItemsResponse>(
       `/checkout/sessions/${encodeURIComponent(sessionId)}/line_items`,
       config.secretKey,
     );
@@ -113,9 +116,9 @@ export const stripeProvider: PaymentProviderInterface = {
       subscriptionId: session.subscription ?? null,
       paymentIntentId: session.payment_intent ?? null,
       metadata: session.metadata ?? {},
-      lineItems: (items.data ?? []).map((li) => ({
-        priceId: li.price.id,
-        quantity: li.quantity,
+      lineItems: (items.data ?? []).map((item) => ({
+        priceId: item.price.id,
+        quantity: item.quantity,
       })),
     };
   },
@@ -125,7 +128,6 @@ export const stripeProvider: PaymentProviderInterface = {
     name: string | undefined,
     config: PaymentConfig,
   ): Promise<string> {
-    // Search for existing customer by email
     const search = await stripeRequest<{ data: { id: string }[] }>(
       `/customers?email=${encodeURIComponent(email)}&limit=1`,
       config.secretKey,
@@ -135,7 +137,6 @@ export const stripeProvider: PaymentProviderInterface = {
       return search.data[0].id;
     }
 
-    // Create new customer
     const body: Record<string, string> = { email };
     if (name) body.name = name;
 
@@ -165,40 +166,23 @@ export const stripeProvider: PaymentProviderInterface = {
   async getCustomerSubscriptions(
     customerId: string,
     config: PaymentConfig,
-  ): Promise<StripeSubscription[]> {
-    const result = await stripeRequest<{
-      data: {
-        id: string;
-        status: string;
-        current_period_end: number;
-        cancel_at_period_end: boolean;
-        items: {
-          data: {
-            price: {
-              id: string;
-              product: string;
-              recurring: { interval: string } | null;
-            };
-          }[];
-        };
-      }[];
-    }>(
+  ): Promise<ProviderSubscription[]> {
+    const result = await stripeRequest<
+      StripeListResponse<StripeSubscriptionResponse>
+    >(
       `/subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=10`,
       config.secretKey,
     );
 
-    return result.data.map((sub) => {
-      // Derive interval from the first item's price (Stripe is the source of truth)
-      const firstItem = sub.items.data[0];
-      const interval = firstItem?.price?.recurring?.interval ?? null;
-
+    return result.data.map((subscription) => {
+      const firstItem = subscription.items.data[0];
       return {
-        id: sub.id,
-        status: sub.status,
-        currentPeriodEnd: sub.current_period_end,
-        cancelAtPeriodEnd: sub.cancel_at_period_end,
-        interval,
-        items: sub.items.data.map((item) => ({
+        id: subscription.id,
+        status: subscription.status,
+        currentPeriodEnd: subscription.current_period_end,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        interval: firstItem?.price?.recurring?.interval ?? null,
+        items: subscription.items.data.map((item) => ({
           priceId: item.price.id,
           productId: item.price.product,
         })),
@@ -209,51 +193,36 @@ export const stripeProvider: PaymentProviderInterface = {
   async getCustomerInvoices(
     customerId: string,
     config: PaymentConfig,
-  ): Promise<StripeInvoice[]> {
-    const result = await stripeRequest<{
-      data: {
-        id: string;
-        status: string;
-        amount_paid: number;
-        currency: string;
-        subscription: string | null;
-        payment_intent: string | null;
-        lines: {
-          data: {
-            price: { id: string; product: string } | null;
-          }[];
-        };
-        period_start: number;
-        period_end: number;
-        hosted_invoice_url: string | null;
-        invoice_pdf: string | null;
-        created: number;
-      }[];
-    }>(
+  ): Promise<ProviderInvoice[]> {
+    const result = await stripeRequest<
+      StripeListResponse<StripeInvoiceResponse>
+    >(
       `/invoices?customer=${encodeURIComponent(customerId)}&limit=50&expand[]=data.lines`,
       config.secretKey,
     );
 
-    return result.data.map((inv) => {
-      const firstLine = inv.lines?.data?.[0];
+    return result.data.map((invoice) => {
+      const firstLine = invoice.lines?.data?.[0];
       return {
-        id: inv.id,
-        status: inv.status,
-        amountPaid: inv.amount_paid / 100,
-        currency: inv.currency.toUpperCase(),
-        subscriptionId: inv.subscription ?? null,
-        paymentIntentId:
-          typeof inv.payment_intent === "string" ? inv.payment_intent : null,
-        stripeProductId:
+        id: invoice.id,
+        status: invoice.status,
+        amountPaid: invoice.amount_paid / 100,
+        currency: invoice.currency.toUpperCase(),
+        subscriptionId: invoice.subscription ?? null,
+        paymentId:
+          typeof invoice.payment_intent === "string"
+            ? invoice.payment_intent
+            : null,
+        productId:
           typeof firstLine?.price?.product === "string"
             ? firstLine.price.product
             : null,
-        stripePriceId: firstLine?.price?.id ?? null,
-        periodStart: inv.period_start,
-        periodEnd: inv.period_end,
-        hostedUrl: inv.hosted_invoice_url ?? null,
-        pdfUrl: inv.invoice_pdf ?? null,
-        created: inv.created,
+        priceId: firstLine?.price?.id ?? null,
+        periodStart: invoice.period_start,
+        periodEnd: invoice.period_end,
+        hostedUrl: invoice.hosted_invoice_url ?? null,
+        pdfUrl: invoice.invoice_pdf ?? null,
+        created: invoice.created,
       };
     });
   },
