@@ -28,6 +28,19 @@ export const invitationRepository = {
     });
   },
 
+  async findPendingByEmail(email: string) {
+    const env = await getAppEnv();
+    return prisma.userInvitation.findFirst({
+      where: {
+        env,
+        email: email.toLowerCase().trim(),
+        status: "pending",
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  },
+
   async list() {
     const env = await getAppEnv();
     return prisma.userInvitation.findMany({
