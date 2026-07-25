@@ -1,4 +1,5 @@
 import { basePrisma } from "./base-prisma";
+import { getRequestScope } from "./request-scope";
 
 export type AppEnv = "dev" | "production";
 
@@ -6,8 +7,10 @@ const VALID_ENVS: AppEnv[] = ["dev", "production"];
 
 /**
  * How long (ms) the cached DB value is considered fresh.
- * Default 50ms provides per-request deduplication while staying near real-time.
- * Increase to 5000–30000 for high-traffic production if the extra DB read becomes a concern.
+ * Default 50ms reduces repeated global configuration reads.
+ *
+ * This cache is deployment-wide only. Request code should resolve APP_ENV once
+ * at the API boundary and then read the immutable AsyncLocalStorage snapshot.
  */
 const SYSTEM_CONFIG_CACHE_MS = 50;
 
@@ -34,11 +37,16 @@ export function getAppEnvSync(): AppEnv {
 }
 
 /**
- * Async environment resolver. Reads from SystemConfig DB table first,
- * falls back to process.env.APP_ENV if DB value is unavailable.
- * Results are cached for SYSTEM_CONFIG_CACHE_MS to deduplicate within a request.
+ * Resolve the active deployment environment.
+ *
+ * Inside an API request, use the request-local immutable snapshot established by
+ * `withRequestScope()`. Outside a request (startup, scripts, migrations), read
+ * the global SystemConfig value and fall back to process.env.APP_ENV.
  */
 export async function getAppEnv(): Promise<AppEnv> {
+  const requestEnv = getRequestScope()?.env;
+  if (requestEnv) return validate(requestEnv);
+
   const now = Date.now();
   if (cachedEnv && now < cacheExpiry) {
     return cachedEnv;
@@ -66,7 +74,7 @@ export async function getAppEnv(): Promise<AppEnv> {
   return inflight;
 }
 
-/** Force-clear the cached value (used after admin updates APP_ENV). */
+/** Force-clear deployment fallback cache after global APP_ENV changes. */
 export function invalidateAppEnvCache(): void {
   cachedEnv = null;
   cacheExpiry = 0;
