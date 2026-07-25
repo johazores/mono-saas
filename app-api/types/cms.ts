@@ -1,4 +1,14 @@
 // ---------------------------------------------------------------------------
+// CMS types — pages, content types, items, taxonomies, media, block templates
+// ---------------------------------------------------------------------------
+
+export type FlexibleBlock = {
+  id: string;
+  type: string;
+  data: Record<string, unknown>;
+};
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -17,16 +27,6 @@ export type PageRecord = {
 
 export type CreatePageInput = {
   title: string;
-  slug: string;
-  status?: string;
-  isHomepage?: boolean;
-  seoTitle?: string;
-  seoDescription?: string;
-  blocks?: FlexibleBlock[];
-};
-
-export type UpdatePageInput = {
-  title?: string;
   slug?: string;
   status?: string;
   isHomepage?: boolean;
@@ -35,41 +35,46 @@ export type UpdatePageInput = {
   blocks?: FlexibleBlock[];
 };
 
+export type UpdatePageInput = Partial<CreatePageInput>;
+
 // ---------------------------------------------------------------------------
-// Content type (ACF-like field definitions)
+// Content type
 // ---------------------------------------------------------------------------
 
 export type ContentFieldType =
   | "text"
   | "textarea"
-  | "rich-text"
-  | "select"
-  | "date"
-  | "media"
+  | "richtext"
   | "number"
   | "boolean"
+  | "select"
+  | "multiselect"
+  | "image"
+  | "file"
   | "url"
+  | "date"
+  | "datetime"
+  | "color"
+  | "group"
   | "repeater"
-  | "array-text"
-  | "pair-list"
-  | "grouped-pair-list"
-  | "gallery-list"
-  | "document-list"
-  | "rate-table-list"
-  | "relation"
-  | "taxonomy";
+  | "flexible"
+  | "specs"
+  | "gallery"
+  | "documents";
 
 export type ContentFieldDefinition = {
-  name: string;
+  key: string;
   label: string;
   type: ContentFieldType;
   required?: boolean;
-  options?: string[];
-  multiple?: boolean;
-  taxonomySlug?: string;
+  defaultValue?: unknown;
   placeholder?: string;
-  subFields?: ContentFieldDefinition[]; // for repeater type
-  width?: "full" | "half"; // layout hint
+  helpText?: string;
+  options?: Array<{ label: string; value: string }>;
+  fields?: ContentFieldDefinition[];
+  layouts?: string[];
+  min?: number;
+  max?: number;
 };
 
 export type ContentTypeSettings = {
@@ -82,14 +87,14 @@ export type ContentTypeSettings = {
 
 export type ContentTypeListDisplay = {
   titleField?: string;
-  subtitleField?: string | null;
-  imageField?: string | null;
+  subtitleField?: string;
+  imageField?: string;
 };
 
 export type ContentTypePublicSettings = {
   hasPublicList?: boolean;
   hasDetailPage?: boolean;
-  urlPrefix?: string | null;
+  urlPrefix?: string;
 };
 
 export type ContentTypeRecord = {
@@ -212,6 +217,9 @@ export type MediaRecord = {
   mediaType: string;
   altText: string | null;
   base64Data: string | null;
+  storageProvider: string | null;
+  storageKey: string | null;
+  checksum: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -227,6 +235,18 @@ export type CreateMediaInput = {
   altText?: string;
   base64Data?: string;
 };
+
+export type MediaFileAccess =
+  | {
+      kind: "storage";
+      url: string;
+      expiresAt: Date;
+    }
+  | {
+      kind: "legacy";
+      mimeType: string;
+      data: string;
+    };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -283,9 +303,3 @@ export type CreateBlockTemplateInput = {
 };
 
 export type UpdateBlockTemplateInput = CreateBlockTemplateInput;
-
-/** A single block instance on a page — references a template by slug */
-export type FlexibleBlock = {
-  templateSlug: string;
-  data: Record<string, unknown>;
-};
