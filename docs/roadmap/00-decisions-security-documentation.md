@@ -75,8 +75,8 @@ Short decision records in `docs/decisions/`. Each states context, options, decis
 Current-state documentation is written from the implementation. Target-state documentation is written only after its ADR or implementation boundary is accepted.
 
 **T-201 · Verify and annotate existing docs**
-- **Priority** P1 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** Add status and last-verified headers to the five existing guides and correct only confirmed drift.
+- **Priority** P1 · **Status** In progress · **Complexity** S · **Depends on** —
+- **Notes:** Checkout/payment and dual-auth guides are annotated and corrected. Architecture, CMS, and testing guides still require status headers and verified-drift updates.
 - **Acceptance:** Each doc carries a status header and a last-verified date.
 
 **T-202 · `docs/repository-map.md`**
