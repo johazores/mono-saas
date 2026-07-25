@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { getSessionSecret } from "@/lib/secure-credentials";
+import { getSessionSecret } from "@/lib/session-secrets";
 import type { AuthProviderInterface } from "./types";
 
 export const ADMIN_SESSION_COOKIE = "admin_session";
