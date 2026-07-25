@@ -22,8 +22,8 @@
 - **Acceptance:** A clean deployment is reproducible from documentation alone.
 
 **T-1402 · Observability baseline**
-- **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** —
-- **Notes:** Structured logging with tenant and request IDs, error reporting, and health endpoints.
+- **Priority** P2 · **Status** In progress · **Complexity** M · **Depends on** —
+- **Notes:** Added structured JSON server logging that inherits request/tenant scope, bounded secret-redacted error messages, Next.js `onRequestError` capture, `X-Request-Id` on request-scoped routes, process liveness and MongoDB readiness endpoints, and request/tenant correlation in activity metadata. `docs/observability.md` documents the contract. Remaining work is universal request-scope adoption, authoritative tenant binding, fuller actor correlation on error paths, and deployment-specific log/error sink configuration.
 - **Acceptance:** A production error is traceable to tenant, route, request, and actor.
 
 **T-1403 · CI (deferred by instruction)**

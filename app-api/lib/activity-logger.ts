@@ -1,6 +1,7 @@
 import type { NextApiRequest } from "next";
 import { getAuthSession } from "@/lib/admin-auth";
 import { getUserSession } from "@/lib/user-auth";
+import { getRequestScope } from "@/lib/request-scope";
 import { activityLogService } from "@/services/activity-log-service";
 import { getClientIp } from "@/lib/request-utils";
 import type { ActivityAction, ActivityActor } from "@/types";
@@ -43,6 +44,13 @@ export async function logActivity(
     }
   }
 
+  const scope = getRequestScope();
+  const metadata = {
+    ...(details?.metadata ?? {}),
+    ...(scope?.requestId ? { requestId: scope.requestId } : {}),
+    ...(scope?.tenantId ? { tenantId: scope.tenantId } : {}),
+  };
+
   await activityLogService.log({
     actor,
     actorId,
@@ -50,7 +58,7 @@ export async function logActivity(
     action,
     resource: details?.resource,
     resourceId: details?.resourceId,
-    metadata: details?.metadata,
+    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     ip: getClientIp(req),
     userAgent: getUserAgent(req),
     method: req.method,
