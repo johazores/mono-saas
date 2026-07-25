@@ -56,8 +56,8 @@
 - **Acceptance:** The filename and imports accurately describe its responsibility.
 
 **T-1505 · Reconcile `AGENTS.md` / `CLAUDE.md`**
-- **Priority** P3 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** Keep one authoritative development instruction source and replace duplicated copies with explicit references where supported.
-- **Acceptance:** Development instructions have one maintained source.
+- **Priority** P3 · **Status** Done · **Complexity** S · **Depends on** —
+- **Notes:** Each application now keeps its Next.js and app-specific coding rules in `AGENTS.md`. `CLAUDE.md` is a one-line `@AGENTS.md` reference, removing duplicate maintained copies without losing either application's distinct rules.
+- **Acceptance:** Development instructions have one maintained source per application.
 
 ---
