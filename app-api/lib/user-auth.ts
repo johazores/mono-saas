@@ -18,20 +18,24 @@ const SESSION_SECONDS = SESSION_DAYS * 24 * 60 * 60;
 const IMPERSONATION_SECONDS = 60 * 60;
 const CLOCK_SKEW_SECONDS = 60;
 
-const ACTIVE_PLAN_FILTER = {
-  status: "active",
-  product: { paymentModel: "recurring" },
-} as const;
+function activePlanFilter() {
+  return {
+    status: "active" as const,
+    product: { paymentModel: "recurring" as const },
+  };
+}
 
-const ACTIVE_PLAN_SELECT = {
-  endDate: true,
-  product: {
-    select: {
-      name: true,
-      slug: true,
+function activePlanSelect() {
+  return {
+    endDate: true as const,
+    product: {
+      select: {
+        name: true as const,
+        slug: true as const,
+      },
     },
-  },
-} as const;
+  };
+}
 
 function sessionExpiry(maxAgeSeconds: number) {
   return new Date(Date.now() + maxAgeSeconds * 1000);
@@ -145,20 +149,20 @@ async function buildUserAuthSession(
       status: true,
       parentId: true,
       purchases: {
-        where: ACTIVE_PLAN_FILTER,
+        where: activePlanFilter(),
         orderBy: { createdAt: "desc" },
         take: 1,
-        select: ACTIVE_PLAN_SELECT,
+        select: activePlanSelect(),
       },
       parent: {
         select: {
           name: true,
           email: true,
           purchases: {
-            where: ACTIVE_PLAN_FILTER,
+            where: activePlanFilter(),
             orderBy: { createdAt: "desc" },
             take: 1,
-            select: ACTIVE_PLAN_SELECT,
+            select: activePlanSelect(),
           },
         },
       },
