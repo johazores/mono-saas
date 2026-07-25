@@ -10,6 +10,8 @@ import { checkRateLimit, ADMIN_LOGIN_LIMIT } from "@/lib/rate-limiter";
 import { logActivity } from "@/lib/activity-logger";
 import { verifyCsrf } from "@/lib/csrf";
 import { getClientIp } from "@/lib/request-utils";
+import { parseRequestBody } from "@/lib/request-validation";
+import { loginRequestSchema } from "@/lib/request-schemas";
 
 export async function loginController(
   req: NextApiRequest,
@@ -37,17 +39,10 @@ export async function loginController(
     return;
   }
 
-  const { email, password } = req.body ?? {};
+  const input = parseRequestBody(res, loginRequestSchema, req.body);
+  if (!input) return;
 
-  if (
-    !email ||
-    typeof email !== "string" ||
-    !password ||
-    typeof password !== "string"
-  ) {
-    sendError(res, "Email and password are required.", 400);
-    return;
-  }
+  const { email, password } = input;
 
   try {
     const admin = await adminService.authenticate(email, password);
@@ -63,7 +58,7 @@ export async function loginController(
   } catch (err) {
     await logActivity(req, "admin.login_failed", {
       actor: "system",
-      metadata: { email: String(email).toLowerCase().trim() },
+      metadata: { email: email.toLowerCase().trim() },
     });
     sendError(res, "Invalid email or password.", 401);
   }
