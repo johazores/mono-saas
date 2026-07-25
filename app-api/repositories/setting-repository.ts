@@ -11,7 +11,7 @@ function hydrateSetting<T extends { key: string; value: unknown }>(record: T): T
   return {
     ...record,
     value: decryptSettingValue(record.value),
-  };
+  } as T;
 }
 
 export const settingRepository = {
