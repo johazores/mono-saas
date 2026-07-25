@@ -110,19 +110,23 @@ function scopeCreateData(model: string, value: unknown, env: string): void {
 }
 
 function scopeUpdateData(model: string, value: unknown, env: string): void {
+  const modelScoped = isEnvScopedModel(model);
+
   for (const item of asArray(value)) {
     if (!isRecord(item)) continue;
 
     // Nested update can be either direct data for to-one relations or
     // { where, data } for list relations.
     if (isRecord(item.data)) {
-      if (isRecord(item.where)) scopeUniqueSelector(item.where, env);
-      if (isEnvScopedModel(model)) item.data.env = env;
+      if (modelScoped && isRecord(item.where)) {
+        scopeUniqueSelector(item.where, env);
+      }
+      if (modelScoped) item.data.env = env;
       scopeNestedWrites(model, item.data, env);
       continue;
     }
 
-    if (isEnvScopedModel(model)) item.env = env;
+    if (modelScoped) item.env = env;
     scopeNestedWrites(model, item, env);
   }
 }
@@ -171,7 +175,9 @@ function scopeNestedWrites(model: string, data: UnknownRecord, env: string): voi
     if (nested.connectOrCreate !== undefined) {
       for (const item of asArray(nested.connectOrCreate)) {
         if (!isRecord(item)) continue;
-        if (targetScoped && isRecord(item.where)) scopeUniqueSelector(item.where, env);
+        if (targetScoped && isRecord(item.where)) {
+          scopeUniqueSelector(item.where, env);
+        }
         if (item.create !== undefined) scopeCreateData(target, item.create, env);
       }
     }
@@ -197,11 +203,41 @@ function scopeNestedWrites(model: string, data: UnknownRecord, env: string): voi
     if (nested.upsert !== undefined) {
       for (const item of asArray(nested.upsert)) {
         if (!isRecord(item)) continue;
-        if (targetScoped && isRecord(item.where)) scopeUniqueSelector(item.where, env);
+        if (targetScoped && isRecord(item.where)) {
+          scopeUniqueSelector(item.where, env);
+        }
         if (item.create !== undefined) scopeCreateData(target, item.create, env);
         if (item.update !== undefined) scopeUpdateData(target, item.update, env);
       }
     }
+  }
+}
+
+function scopeCountSelection(
+  model: string,
+  countSelection: UnknownRecord,
+  env: string,
+): void {
+  if (!isRecord(countSelection.select)) return;
+
+  const relations = MODEL_RELATIONS.get(model);
+  if (!relations) return;
+
+  for (const [fieldName, relation] of relations) {
+    if (!relation.isList || !isEnvScopedModel(relation.targetModel)) continue;
+
+    const selected = countSelection.select[fieldName];
+    if (selected === undefined || selected === false) continue;
+
+    if (selected === true) {
+      countSelection.select[fieldName] = { where: { env } };
+      continue;
+    }
+
+    if (!isRecord(selected)) continue;
+    if (!isRecord(selected.where)) selected.where = {};
+    overwriteExplicitEnv(selected.where, env);
+    (selected.where as UnknownRecord).env = env;
   }
 }
 
@@ -218,6 +254,10 @@ function scopeSelection(
   selection: UnknownRecord,
   env: string,
 ): UnknownRecord[] {
+  if (isRecord(selection._count)) {
+    scopeCountSelection(model, selection._count, env);
+  }
+
   const relations = MODEL_RELATIONS.get(model);
   if (!relations) return [];
 
@@ -269,10 +309,7 @@ function scopeSelection(
       parentConditions.push(relationMatches);
     } else {
       parentConditions.push({
-        OR: [
-          { [fieldName]: { is: null } },
-          relationMatches,
-        ],
+        OR: [{ [fieldName]: { is: null } }, relationMatches],
       });
     }
   }
@@ -331,7 +368,11 @@ export function applyEnvScope(
     args.where.env = env;
   }
 
-  if (operation === "create" || operation === "update" || operation === "updateMany") {
+  if (
+    operation === "create" ||
+    operation === "update" ||
+    operation === "updateMany"
+  ) {
     setTopLevelEnv(args.data, env);
   }
 
@@ -350,7 +391,11 @@ export function applyEnvScope(
 
   if (!model) return args;
 
-  if (operation === "create" || operation === "update" || operation === "updateMany") {
+  if (
+    operation === "create" ||
+    operation === "update" ||
+    operation === "updateMany"
+  ) {
     if (isRecord(args.data)) scopeNestedWrites(model, args.data, env);
   }
 
