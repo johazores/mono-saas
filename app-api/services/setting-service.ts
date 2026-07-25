@@ -39,7 +39,7 @@ function normalizeAuthorizedParties(value: unknown): string[] {
 
   const parties = rawValues
     .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
+    .map((item) => item.trim().replace(/\/$/, ""))
     .filter(Boolean);
 
   return [...new Set(parties)];
@@ -58,7 +58,7 @@ function validateAuthorizedParties(value: unknown): string[] {
     } catch {
       throw new Error(`Invalid Clerk authorized party: ${party}`);
     }
-    if (url.origin !== party.replace(/\/$/, "")) {
+    if (url.origin !== party) {
       throw new Error(
         `Clerk authorized parties must be origins without paths: ${party}`,
       );
