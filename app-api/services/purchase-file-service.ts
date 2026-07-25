@@ -82,7 +82,7 @@ export const purchaseFileService = {
       id,
     )) as PurchaseFileRecord | null | undefined;
 
-    if (file?.storageProvider || file?.storageKey) {
+    if (file && (file.storageProvider || file.storageKey)) {
       if (!file.storageProvider || !file.storageKey) {
         throw new Error("File storage metadata is incomplete.");
       }
