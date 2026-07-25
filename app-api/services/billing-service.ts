@@ -2,35 +2,26 @@ import { userRepository } from "@/repositories/user-repository";
 import { purchaseRepository } from "@/repositories/purchase-repository";
 import { productRepository } from "@/repositories/product-repository";
 import { getPaymentProvider, getPaymentConfig } from "@/lib/payment";
-import type { BillingStatus, StripeSubscription, StripeInvoice } from "@/types";
+import type { BillingStatus, ProviderInvoice } from "@/types";
 
-// Throttle sync per user — skip if synced within the last 5 minutes
 const SYNC_THROTTLE_MS = 5 * 60 * 1000;
 const lastSyncMap = new Map<string, number>();
 
 export const billingService = {
-  /**
-   * Fire-and-forget background sync. Swallows errors so it never
-   * blocks or breaks the calling request (login, /me, admin view).
-   */
   syncInBackground(userId: string): void {
     billingService.syncPurchases(userId).catch(() => {
-      // Intentionally swallowed — sync is best-effort
+      // Best-effort synchronization must not break the calling request.
     });
   },
 
-  /**
-   * Force-sync bypassing the throttle. Used when the user explicitly
-   * clicks "Sync from Stripe" in the UI.
-   */
   async forceSyncPurchases(userId: string): Promise<{ synced: number }> {
     lastSyncMap.delete(userId);
     return billingService.syncPurchases(userId);
   },
 
   /**
-   * Ensure the user has a Stripe customer ID.
-   * If not, create one via Stripe and save it.
+   * Current schema compatibility: customer references still live in the
+   * Stripe-named User field until T-702 moves them to provider references.
    */
   async ensureStripeCustomer(userId: string): Promise<string> {
     const user = await userRepository.findById(userId);
@@ -40,7 +31,6 @@ export const billingService = {
 
     const config = await getPaymentConfig();
     const provider = getPaymentProvider(config.provider);
-
     const customerId = await provider.findOrCreateCustomer(
       user.email,
       user.name,
@@ -51,25 +41,17 @@ export const billingService = {
     return customerId;
   },
 
-  /**
-   * Create a Stripe Billing Portal session for the user.
-   * Allows them to manage payment methods, view invoices, cancel subscriptions.
-   */
   async createPortalSession(
     userId: string,
     returnUrl: string,
   ): Promise<{ url: string }> {
     const customerId = await billingService.ensureStripeCustomer(userId);
-
     const config = await getPaymentConfig();
     const provider = getPaymentProvider(config.provider);
 
     return provider.createBillingPortalSession(customerId, returnUrl, config);
   },
 
-  /**
-   * Fetch the user's current Stripe subscriptions, invoices, and billing status.
-   */
   async getStatus(userId: string): Promise<BillingStatus> {
     const user = await userRepository.findById(userId);
     if (!user) throw new Error("User not found.");
@@ -86,12 +68,10 @@ export const billingService = {
 
     const config = await getPaymentConfig();
     const provider = getPaymentProvider(config.provider);
-
     const [subscriptions, invoices] = await Promise.all([
       provider.getCustomerSubscriptions(user.stripeCustomerId, config),
       provider.getCustomerInvoices(user.stripeCustomerId, config),
     ]);
-
     const lastSync = lastSyncMap.get(userId);
 
     return {
@@ -103,13 +83,7 @@ export const billingService = {
     };
   },
 
-  /**
-   * Sync Stripe invoices & subscriptions into local Purchase records.
-   * Upserts by externalId (Stripe invoice ID or subscription ID).
-   * Returns the number of records synced.
-   */
   async syncPurchases(userId: string): Promise<{ synced: number }> {
-    // Throttle: skip if this user was synced within the last 5 minutes
     const lastSync = lastSyncMap.get(userId);
     if (lastSync && Date.now() - lastSync < SYNC_THROTTLE_MS) {
       return { synced: 0 };
@@ -117,88 +91,94 @@ export const billingService = {
 
     const user = await userRepository.findById(userId);
     if (!user) throw new Error("User not found.");
-
-    if (!user.stripeCustomerId) {
-      return { synced: 0 };
-    }
+    if (!user.stripeCustomerId) return { synced: 0 };
 
     const config = await getPaymentConfig();
     const provider = getPaymentProvider(config.provider);
-
     const [subscriptions, invoices] = await Promise.all([
       provider.getCustomerSubscriptions(user.stripeCustomerId, config),
       provider.getCustomerInvoices(user.stripeCustomerId, config),
     ]);
 
-    // Build a lookup of local products by Stripe product ID
+    // T-702 replaces this provider-specific schema lookup with external refs.
     const allProducts = await productRepository.listAll();
-    const productByStripeId = new Map<string, (typeof allProducts)[0]>();
-    for (const p of allProducts) {
+    const productByExternalId = new Map<string, (typeof allProducts)[0]>();
+    for (const product of allProducts) {
       if (config.mode === "live") {
-        if (p.stripeLiveProductId)
-          productByStripeId.set(p.stripeLiveProductId, p);
-      } else {
-        if (p.stripeTestProductId)
-          productByStripeId.set(p.stripeTestProductId, p);
+        if (product.stripeLiveProductId) {
+          productByExternalId.set(product.stripeLiveProductId, product);
+        }
+      } else if (product.stripeTestProductId) {
+        productByExternalId.set(product.stripeTestProductId, product);
       }
     }
 
     let synced = 0;
 
-    // Sync subscriptions → Purchase with externalId = sub.id
-    for (const sub of subscriptions) {
-      const localProduct = matchProduct(sub.items, productByStripeId);
+    for (const subscription of subscriptions) {
+      const localProduct = matchProduct(
+        subscription.items,
+        productByExternalId,
+      );
       if (!localProduct) continue;
 
       await upsertPurchase(userId, localProduct.id, {
-        externalId: sub.id,
+        externalId: subscription.id,
         amount: localProduct.price,
         currency: localProduct.currency,
-        status: mapSubscriptionStatus(sub.status),
-        endDate: new Date(sub.currentPeriodEnd * 1000),
-        cancelledAt: sub.cancelAtPeriodEnd
-          ? new Date(sub.currentPeriodEnd * 1000)
+        status: mapSubscriptionStatus(subscription.status),
+        endDate: new Date(subscription.currentPeriodEnd * 1000),
+        cancelledAt: subscription.cancelAtPeriodEnd
+          ? new Date(subscription.currentPeriodEnd * 1000)
           : null,
         metadata: {
-          stripeType: "subscription",
-          interval: sub.interval,
+          provider: config.provider,
+          providerType: "subscription",
+          interval: subscription.interval,
           syncedAt: new Date().toISOString(),
         },
       });
-      synced++;
+      synced += 1;
     }
 
-    // Sync paid invoices → Purchase with externalId = invoice.id
-    // Skip invoices that are tied to a subscription we already synced
-    const syncedSubIds = new Set(subscriptions.map((s) => s.id));
+    const syncedSubscriptionIds = new Set(
+      subscriptions.map((subscription) => subscription.id),
+    );
 
-    for (const inv of invoices) {
-      // Skip non-paid invoices
-      if (inv.status !== "paid") continue;
+    for (const invoice of invoices) {
+      if (invoice.status !== "paid") continue;
+      if (
+        invoice.subscriptionId &&
+        syncedSubscriptionIds.has(invoice.subscriptionId)
+      ) {
+        continue;
+      }
 
-      // If this invoice belongs to a subscription we already synced, skip it
-      // to avoid duplicate Purchase records
-      if (inv.subscriptionId && syncedSubIds.has(inv.subscriptionId)) continue;
-
-      const localProduct = matchInvoiceProduct(inv, productByStripeId);
+      const localProduct = matchInvoiceProduct(
+        invoice,
+        productByExternalId,
+      );
       if (!localProduct) continue;
 
       await upsertPurchase(userId, localProduct.id, {
-        externalId: inv.id,
-        paymentIntentId: inv.paymentIntentId,
-        amount: inv.amountPaid,
-        currency: inv.currency,
+        externalId: invoice.id,
+        paymentIntentId: invoice.paymentId,
+        amount: invoice.amountPaid,
+        currency: invoice.currency,
         status: "completed",
-        startDate: new Date(inv.periodStart * 1000),
-        endDate: inv.periodEnd ? new Date(inv.periodEnd * 1000) : null,
+        startDate: new Date(invoice.periodStart * 1000),
+        endDate: invoice.periodEnd
+          ? new Date(invoice.periodEnd * 1000)
+          : null,
         metadata: {
-          stripeType: "invoice",
-          hostedUrl: inv.hostedUrl,
-          pdfUrl: inv.pdfUrl,
+          provider: config.provider,
+          providerType: "invoice",
+          hostedUrl: invoice.hostedUrl,
+          pdfUrl: invoice.pdfUrl,
           syncedAt: new Date().toISOString(),
         },
       });
-      synced++;
+      synced += 1;
     }
 
     lastSyncMap.set(userId, Date.now());
@@ -206,12 +186,10 @@ export const billingService = {
   },
 };
 
-// --- helpers ---
-
 function mapSubscriptionStatus(
-  stripeStatus: string,
+  providerStatus: string,
 ): "active" | "cancelled" | "expired" | "pending" {
-  switch (stripeStatus) {
+  switch (providerStatus) {
     case "active":
     case "trialing":
       return "active";
@@ -234,26 +212,32 @@ function matchProduct(
 ): { id: string; price: number; currency: string } | null {
   for (const item of items) {
     const byProduct = lookup.get(item.productId);
-    if (byProduct)
+    if (byProduct) {
       return byProduct as { id: string; price: number; currency: string };
+    }
     const byPrice = lookup.get(item.priceId);
-    if (byPrice)
+    if (byPrice) {
       return byPrice as { id: string; price: number; currency: string };
+    }
   }
   return null;
 }
 
 function matchInvoiceProduct(
-  inv: StripeInvoice,
+  invoice: ProviderInvoice,
   lookup: Map<string, { id: string }>,
 ): { id: string; price: number; currency: string } | null {
-  if (inv.stripeProductId) {
-    const m = lookup.get(inv.stripeProductId);
-    if (m) return m as { id: string; price: number; currency: string };
+  if (invoice.productId) {
+    const product = lookup.get(invoice.productId);
+    if (product) {
+      return product as { id: string; price: number; currency: string };
+    }
   }
-  if (inv.stripePriceId) {
-    const m = lookup.get(inv.stripePriceId);
-    if (m) return m as { id: string; price: number; currency: string };
+  if (invoice.priceId) {
+    const product = lookup.get(invoice.priceId);
+    if (product) {
+      return product as { id: string; price: number; currency: string };
+    }
   }
   return null;
 }
@@ -273,11 +257,8 @@ async function upsertPurchase(
     metadata?: Record<string, unknown>;
   },
 ) {
-  // Check by primary externalId first
   let existing = await purchaseRepository.findByExternalId(data.externalId);
 
-  // Also check if the purchase was created via checkout with the payment
-  // intent ID as its externalId (checkout uses pi_xxx, invoices use in_xxx).
   if (!existing && data.paymentIntentId) {
     existing = await purchaseRepository.findByExternalId(data.paymentIntentId);
   }
