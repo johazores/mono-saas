@@ -5,14 +5,44 @@ import { invitationRepository } from "@/repositories/invitation-repository";
 import { settingService } from "@/services/setting-service";
 import type { AuthProviderInterface, VerifiedIdentity } from "./types";
 
+export type ResolvedAuthUser = Pick<
+  User,
+  "id" | "name" | "email" | "status" | "parentId"
+>;
+
 export type IdentityResolver = (
   identity: VerifiedIdentity,
   provider: AuthProviderInterface,
-) => Promise<User | null>;
+) => Promise<ResolvedAuthUser | null>;
 
-/** Credentials subjects are existing local user IDs created by UserSession. */
+function readLocalUserClaim(value: unknown): ResolvedAuthUser | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const user = value as Record<string, unknown>;
+
+  if (
+    typeof user.id !== "string" ||
+    typeof user.name !== "string" ||
+    typeof user.email !== "string" ||
+    typeof user.status !== "string" ||
+    !(typeof user.parentId === "string" || user.parentId === null)
+  ) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    status: user.status,
+    parentId: user.parentId,
+  };
+}
+
+/** Credentials verification already loaded the session's local user. */
 export const resolveCredentialsIdentity: IdentityResolver = async (identity) => {
-  return prisma.user.findUnique({ where: { id: identity.subject } });
+  const localUser = readLocalUserClaim(identity.claims.localUser);
+  if (!localUser || localUser.id !== identity.subject) return null;
+  return localUser;
 };
 
 /**
