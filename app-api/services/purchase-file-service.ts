@@ -1,6 +1,17 @@
+import { getStorageProvider } from "@/lib/storage";
 import { purchaseFileRepository } from "@/repositories/purchase-file-repository";
 import { purchaseRepository } from "@/repositories/purchase-repository";
-import type { PurchaseFileRecord, CreatePurchaseFileInput } from "@/types";
+import type {
+  PurchaseFileDownloadAccess,
+  PurchaseFileRecord,
+  CreatePurchaseFileInput,
+} from "@/types";
+
+function assertSupportedStorageProvider(provider: string): void {
+  if (provider !== "s3-compatible") {
+    throw new Error(`Unsupported storage provider: ${provider}`);
+  }
+}
 
 export const purchaseFileService = {
   async listByPurchase(purchaseId: string): Promise<PurchaseFileRecord[]> {
@@ -25,7 +36,61 @@ export const purchaseFileService = {
     return file as PurchaseFileRecord;
   },
 
+  /**
+   * Resolve storage-backed or legacy base64 download content.
+   * Callers must complete purchase ownership/status authorization first.
+   */
+  async getDownloadAccess(
+    file: PurchaseFileRecord,
+  ): Promise<PurchaseFileDownloadAccess> {
+    if (file.storageProvider || file.storageKey) {
+      if (!file.storageProvider || !file.storageKey) {
+        throw new Error("File storage metadata is incomplete.");
+      }
+
+      assertSupportedStorageProvider(file.storageProvider);
+      const provider = await getStorageProvider();
+      const signed = await provider.createDownloadUrl({
+        key: file.storageKey,
+        expiresInSeconds: 5 * 60,
+        downloadName: file.fileName,
+      });
+
+      return {
+        kind: "storage",
+        fileName: file.fileName,
+        mimeType: file.mimeType,
+        url: signed.url,
+        expiresAt: signed.expiresAt,
+      };
+    }
+
+    if (file.data == null) {
+      throw new Error("File content is unavailable.");
+    }
+
+    return {
+      kind: "legacy",
+      fileName: file.fileName,
+      mimeType: file.mimeType,
+      data: file.data,
+    };
+  },
+
   async delete(id: string): Promise<void> {
+    const file = (await purchaseFileRepository.findById(
+      id,
+    )) as PurchaseFileRecord | null | undefined;
+
+    if (file && (file.storageProvider || file.storageKey)) {
+      if (!file.storageProvider || !file.storageKey) {
+        throw new Error("File storage metadata is incomplete.");
+      }
+      assertSupportedStorageProvider(file.storageProvider);
+      const provider = await getStorageProvider();
+      await provider.deleteObject(file.storageKey);
+    }
+
     await purchaseFileRepository.delete(id);
   },
 

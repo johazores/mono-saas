@@ -1,6 +1,6 @@
 # Object Storage
 
-- **Status:** Provider/settings foundation implemented; resource integration and migration still in progress
+- **Status:** Provider/settings/read-path foundation implemented; tenant-aware uploads and payload migration remain in progress
 - **Last verified:** 2026-07-25
 - **Decision:** ADR-005
 - **Roadmap:** T-1001, T-1002
@@ -30,7 +30,57 @@ Uploads should go directly from the client/migration caller to object storage ra
 
 This removes the MongoDB/base64 ceiling from the future media/download flow and avoids creating a new API-process memory limit. A 20 MB, 200 MB, or larger object uses the same signed URL flow; actual provider/account limits still apply.
 
-The current MongoDB payload columns remain unchanged until T-1002 migrates existing rows.
+New tenant-aware upload-key generation is intentionally deferred until T-305 establishes the final `tenantId` namespace. This prevents creating a temporary public/request-selected tenant prefix that would later need security-sensitive migration.
+
+## Transitional schema
+
+ADR-005 is being applied in stages while legacy payloads remain readable.
+
+`PurchaseFile` now retains:
+
+- optional legacy `data` base64 content;
+- `storageProvider`;
+- `storageKey`;
+- `checksum`;
+- existing file name, mime type, size, metadata, and purchase ownership.
+
+`Media` now retains:
+
+- optional legacy `base64Data`;
+- `storageProvider`;
+- `storageKey`;
+- `checksum`;
+- existing source/name/URL/mime/size/media metadata.
+
+No legacy payload column has been removed yet. T-1002 performs the restartable backfill and final removal only after object verification.
+
+## Read and delete migration seam
+
+### Purchase files
+
+The member purchase-file route keeps the existing authorization sequence:
+
+1. authenticate the user;
+2. load the file and purchase;
+3. verify `purchase.userId` matches the session user;
+4. verify purchase status is `completed` or `active`;
+5. only then ask `purchaseFileService.getDownloadAccess()` for content.
+
+A migrated storage-backed record receives a five-minute signed download URL and the API returns a `302` redirect with `Cache-Control: no-store`.
+
+A legacy record still decodes and serves its base64 payload exactly through the existing response path.
+
+Knowing a purchase-file ID alone is therefore not enough to trigger signed URL issuance.
+
+### CMS media
+
+The existing `/api/cms/media/:id/file` behavior remains public. When storage metadata exists, the route issues a five-minute signed object URL and redirects. Legacy media continues to serve base64 bytes with the existing immutable cache header.
+
+This preserves current public CMS media behavior; it does not turn CMS media into a private asset authorization system.
+
+### Delete behavior
+
+For storage-backed purchase files and media, the object is deleted first. Database metadata is removed only after object deletion succeeds. This avoids silently discarding the only database reference when the provider cleanup fails.
 
 ## S3-compatible adapter
 
@@ -79,33 +129,37 @@ Adding another provider should require:
 2. its registered settings/types;
 3. one registry case.
 
-Business services should depend only on `StorageProviderInterface`, never on S3/R2-specific request or response types.
+Business services depend only on `StorageProviderInterface`, never on S3/R2-specific request or response types.
 
 ## Security rules
 
 - Objects are private by default.
 - Applications persist storage keys, not permanent public URLs.
-- Download access is granted with short-lived signed URLs after application authorization.
+- Private purchase downloads are authorized before a signed URL is created.
+- Public CMS media keeps its existing public serving semantics.
 - Secret access keys never go to browsers or signed query strings.
 - Download filenames are sanitized before being included in signed response headers.
 - Provider error response bodies are not propagated to users or logs by the adapter.
 - Storage credential settings use the existing encrypted/masked settings boundary.
+- Partial storage metadata fails closed rather than falling back silently to a possibly stale payload.
 
 ## Remaining T-1001 work
 
 T-1001 remains in progress until:
 
-1. media and purchase-file services use `getStorageProvider()` for upload/download lifecycle operations;
-2. ownership/tenant authorization is enforced before signed download URL issuance;
+1. T-305 provides the final tenant-aware object-key namespace for direct uploads;
+2. media and purchase-file create/upload flows issue signed upload URLs and persist verified object metadata;
 3. a real configured object store passes upload/download/delete tests, including a file larger than 20 MB.
+
+The private purchase-file read path and storage object cleanup are already integrated. CMS media storage-backed reads and cleanup are also integrated while retaining current public-media behavior.
 
 ## T-1002 migration
 
 After T-1001 is production-ready:
 
 1. read legacy `Media.base64Data` and `PurchaseFile.data` rows in restartable batches;
-2. upload decoded bytes to object storage under deterministic keys;
+2. upload decoded bytes to object storage under deterministic tenant-aware keys;
 3. verify object size/checksum;
-4. persist storage provider/key/metadata;
-5. make reads use object storage;
+4. persist storage provider/key/checksum metadata;
+5. make reads use object storage (already supported when metadata exists);
 6. remove base64 payload columns only after verification and rollback planning.

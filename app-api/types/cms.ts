@@ -212,6 +212,9 @@ export type MediaRecord = {
   mediaType: string;
   altText: string | null;
   base64Data: string | null;
+  storageProvider: string | null;
+  storageKey: string | null;
+  checksum: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -227,6 +230,18 @@ export type CreateMediaInput = {
   altText?: string;
   base64Data?: string;
 };
+
+export type MediaFileAccess =
+  | {
+      kind: "storage";
+      url: string;
+      expiresAt: Date;
+    }
+  | {
+      kind: "legacy";
+      mimeType: string;
+      data: string;
+    };
 
 // ---------------------------------------------------------------------------
 // Helpers

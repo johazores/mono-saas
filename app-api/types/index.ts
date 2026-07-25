@@ -42,6 +42,7 @@ export type {
 export type {
   PurchaseFileRecord,
   CreatePurchaseFileInput,
+  PurchaseFileDownloadAccess,
 } from "./purchase-file";
 export type {
   PaymentMode,
@@ -123,6 +124,7 @@ export type {
   UpdateTaxonomyTermInput,
   MediaRecord,
   CreateMediaInput,
+  MediaFileAccess,
   BlockTemplateRecord,
   CreateBlockTemplateInput,
   UpdateBlockTemplateInput,
