@@ -25,7 +25,7 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-vi.mock("@/lib/secure-credentials", () => ({
+vi.mock("@/lib/session-secrets", () => ({
   getUserSessionSecret: () => "test-secret-at-least-32-characters-long",
 }));
 
