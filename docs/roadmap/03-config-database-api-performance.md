@@ -8,8 +8,8 @@
 - **Acceptance:** A new integration can register settings without editing `setting-service.ts`.
 
 **T-902 · Define the bootstrap env surface**
-- **Priority** P1 · **Status** In progress · **Complexity** S · **Depends on** T-101
-- **Notes:** Encryption bootstrap variables and operational requirements are documented in `.env.example` and `docs/security.md`. Startup validation and the final surface depend on completing the `APP_ENV` tenancy migration.
+- **Priority** P1 · **Status** Done · **Complexity** S · **Depends on** T-101
+- **Notes:** `.env.example` and `docs/bootstrap-configuration.md` now define the bootstrap-only surface. `instrumentation.register()` validates database/session requirements, deployment scope, optional origin fallback, encryption key/version rules, and requires encryption in production. Provider/integration credentials remain database-backed settings. `APP_ENV` is explicitly transitional and must be removed from this contract during T-305.
 - **Acceptance:** Documented list; startup validation; `.env.example` matches exactly.
 
 **T-903 · Settings change audit**
