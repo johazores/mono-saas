@@ -2,7 +2,7 @@ import { getAppEnvSync } from "@/lib/env";
 import {
   getSessionSecret,
   getUserSessionSecret,
-} from "@/lib/secure-credentials";
+} from "@/lib/session-secrets";
 import { validateCurrentEncryptionKeyConfig } from "@/lib/secret-crypto";
 
 const MIN_SHARED_SECRET_LENGTH = 32;

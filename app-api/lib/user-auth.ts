@@ -2,7 +2,7 @@ import crypto from "crypto";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { sendError } from "@/lib/api-response";
-import { getUserSessionSecret } from "@/lib/secure-credentials";
+import { getUserSessionSecret } from "@/lib/session-secrets";
 import {
   getAuthProviderRegistration,
   hashUserSessionToken,

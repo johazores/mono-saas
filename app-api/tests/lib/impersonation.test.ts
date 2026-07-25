@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
-vi.mock("@/lib/secure-credentials", () => ({
+vi.mock("@/lib/session-secrets", () => ({
   getUserSessionSecret: () => "test-secret-at-least-32-characters-long",
 }));
 vi.mock("@/lib/clerk-auth", () => ({

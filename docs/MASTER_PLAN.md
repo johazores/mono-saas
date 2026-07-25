@@ -110,9 +110,9 @@ Returning linked users now resolve from the verified provider subject and local 
 
 Clerk verification now requires authorized frontend origins. New local accounts require an unexpired invitation unless open signup is explicitly enabled. Provider-subject lookup includes explicit current scope, and existing identity links are not reassigned automatically. The remaining Clerk-specific `User.clerkId` compatibility resolver is isolated pending T-305 `ExternalIdentity` migration.
 
-**F-7 — Binary files live in MongoDB as base64. `P1` — Decision resolved, implementation open**
+**F-7 — Binary files live in MongoDB as base64. `P1` — Storage foundation implemented, migration open**
 
-ADR-005 accepts provider-neutral object storage. Database rows will retain storage keys and metadata only. T-1001 and T-1002 implement the adapter and migration.
+ADR-005 accepts provider-neutral object storage. The S3-compatible storage boundary and signed URL foundation are implemented. Database rows still carry legacy base64 payloads until provider configuration/service integration and T-1002 migration remove those columns.
 
 **F-8 — No reusable RBAC model. `P1` — Decision foundation complete, implementation open**
 
@@ -204,7 +204,7 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-12 Performance | 2 | 2 |
 | WS-13 Testing | 2 | 0 |
 | WS-14 Production | 3 | 0 |
-| WS-15 Tech debt | 5 | 3 |
-| **Total** | **60** | **24** |
+| WS-15 Tech debt | 5 | 4 |
+| **Total** | **60** | **25** |
 
 `In progress` and externally blocked work is not counted as done. The workstream files contain the authoritative status of each task.
