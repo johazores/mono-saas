@@ -168,17 +168,20 @@ model Purchase {
 }
 
 model PurchaseFile {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  env        String   @default("dev") // dev | production
-  purchaseId String   @db.ObjectId
-  fileName   String   // Display name
-  mimeType   String   @default("application/octet-stream")
-  sizeBytes  Int      @default(0)
-  data       String   // base64-encoded file content (temporary approach)
-  metadata   Json?
-  purchase   Purchase @relation(fields: [purchaseId], references: [id])
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  env             String   @default("dev") // dev | production
+  purchaseId      String   @db.ObjectId
+  fileName        String   // Display name
+  mimeType        String   @default("application/octet-stream")
+  sizeBytes       Int      @default(0)
+  data            String?  // legacy base64 content; removed by T-1002
+  storageProvider String?
+  storageKey      String?
+  checksum        String?
+  metadata        Json?
+  purchase        Purchase @relation(fields: [purchaseId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model Membership {
@@ -331,19 +334,22 @@ model TaxonomyTerm {
 }
 
 model Media {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
-  env          String   @default("dev") // dev | production
-  source       String   @default("upload") // upload | external
-  fileName     String
-  originalName String
-  url          String
-  mimeType     String?
-  size         Int?
-  mediaType    String   @default("image") // image | document | file
-  altText      String?
-  base64Data   String? // base64-encoded file content (small files only)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  env             String   @default("dev") // dev | production
+  source          String   @default("upload") // upload | external
+  fileName        String
+  originalName    String
+  url             String
+  mimeType        String?
+  size            Int?
+  mediaType       String   @default("image") // image | document | file
+  altText         String?
+  base64Data      String?  // legacy base64 content; removed by T-1002
+  storageProvider String?
+  storageKey      String?
+  checksum        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model BlockTemplate {
