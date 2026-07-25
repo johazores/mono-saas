@@ -1,15 +1,18 @@
 import type { NextApiRequest } from "next";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const verifyTokenMock = vi.fn();
-const getUserMock = vi.fn();
-const createClerkClientMock = vi.fn(() => ({
-  users: { getUser: getUserMock },
-}));
+const mocks = vi.hoisted(() => {
+  const verifyToken = vi.fn();
+  const getUser = vi.fn();
+  const createClerkClient = vi.fn(() => ({
+    users: { getUser },
+  }));
+  return { verifyToken, getUser, createClerkClient };
+});
 
 vi.mock("@clerk/backend", () => ({
-  verifyToken: verifyTokenMock,
-  createClerkClient: createClerkClientMock,
+  verifyToken: mocks.verifyToken,
+  createClerkClient: mocks.createClerkClient,
 }));
 
 vi.mock("@/services/setting-service", () => ({
@@ -48,7 +51,7 @@ beforeEach(() => {
 
 describe("verifyClerkToken", () => {
   it("pins the token to configured authorized parties", async () => {
-    verifyTokenMock.mockResolvedValue({
+    mocks.verifyToken.mockResolvedValue({
       sub: "user_123",
       email: "user@example.com",
       name: "Test User",
@@ -59,11 +62,11 @@ describe("verifyClerkToken", () => {
       email: "user@example.com",
       name: "Test User",
     });
-    expect(verifyTokenMock).toHaveBeenCalledWith("session-token", {
+    expect(mocks.verifyToken).toHaveBeenCalledWith("session-token", {
       secretKey: "sk_test_private",
       authorizedParties: ["http://localhost:7000"],
     });
-    expect(createClerkClientMock).not.toHaveBeenCalled();
+    expect(mocks.createClerkClient).not.toHaveBeenCalled();
   });
 
   it("rejects verification when no authorized party is configured", async () => {
@@ -73,13 +76,13 @@ describe("verifyClerkToken", () => {
     });
 
     await expect(verifyClerkToken(request())).resolves.toBeNull();
-    expect(verifyTokenMock).not.toHaveBeenCalled();
+    expect(mocks.verifyToken).not.toHaveBeenCalled();
   });
 });
 
 describe("getClerkUserProfile", () => {
   it("fetches and caches profile data only when requested", async () => {
-    getUserMock.mockResolvedValue({
+    mocks.getUser.mockResolvedValue({
       primaryEmailAddressId: "email_1",
       emailAddresses: [
         { id: "email_1", emailAddress: "new@example.com" },
@@ -96,6 +99,6 @@ describe("getClerkUserProfile", () => {
       email: "new@example.com",
       name: "New User",
     });
-    expect(getUserMock).toHaveBeenCalledTimes(1);
+    expect(mocks.getUser).toHaveBeenCalledTimes(1);
   });
 });
