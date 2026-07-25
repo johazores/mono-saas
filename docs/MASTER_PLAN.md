@@ -2,6 +2,7 @@
 
 **Repository:** `johazores/mono-saas` (`master`)
 **Review date:** 2026-07-25
+**Last updated:** 2026-07-25
 **Status of this document:** Source of truth for roadmap and sequencing. Supersedes ad-hoc planning.
 
 ---
@@ -30,110 +31,121 @@ Task IDs are stable. Reference them in branch names and PR titles: `feat/ws3-ten
 
 ### 1.1 What is actually here
 
-Two Next.js 16 apps in a pnpm monorepo, MongoDB via Prisma.
+Two Next.js 16 applications managed by root pnpm scripts, with MongoDB through Prisma.
 
-- **`app-api`** (port 7001) — Pages Router API only; `app/` holds three placeholder files. Clean four-layer separation: `pages/api` → `controllers` → `services` → `repositories`. 30 controllers, 23 services, 20 repositories, 24 Prisma models, 21 Vitest suites wired to a `prebuild` hook.
-- **`app-client`** (port 7000) — App Router, three route groups: `(admin)` 19 pages, `(public)` and `(user)` 11 pages.
+- **`app-api`** (port 7001) — Pages Router API with the established flow `pages/api` → `controllers` → `services` → `repositories`. Its `app/` directory currently contains placeholders for the future administrator shell.
+- **`app-client`** (port 7000) — App Router application with administrator, public, and member route groups.
+- **Database** — 22 Prisma models. Nineteen carry `env`; the automatic scoping extension lists eighteen because `UserInvitation` is omitted.
+- **Tests** — Vitest suites run through the API `prebuild` hook. Most current tests mock repositories; route/database integration coverage remains limited.
 
-The layering is genuinely good and consistently applied. Services never touch Prisma directly. Naming is uniform kebab-case. Types are centralised in `types/`. This is a better starting point than most boilerplates.
+The layering is genuinely good and consistently applied. Services do not touch Prisma directly, naming is generally kebab-case, and backend types are centralized. This is a strong starting point for the boilerplate.
 
-Existing docs (`docs/architecture.md`, `cms-guide.md`, `checkout-payment.md`, `dual-auth.md`, `testing-guide.md`, ~97KB total) are **accurate, not stale**. They correctly describe the system that exists. The gap is not documentation drift — it is that the documented architecture is not the target architecture. Rewriting them wholesale would destroy correct work; see WS-2.
+Existing documentation accurately describes much of the system that exists. The gap is mainly between the current architecture and the accepted target architecture. Correct current-state documentation should be annotated and extended rather than discarded.
 
-### 1.2 Findings that change the plan
+Verified current-state references:
 
-**F-1 — Provider secrets are stored in plaintext. `P0`**
+- [`repository-map.md`](repository-map.md)
+- [`data-model.md`](data-model.md)
+- [`security.md`](security.md)
+- [`decisions/`](decisions/)
 
-`SiteSetting` holds `auth.clerkSecretKey`, `payment.stripe.testSecretKey`, and `payment.stripe.liveSecretKey` as raw JSON strings. A repo-wide search for `createCipheriv`, `aes-256`, `encrypt`, or `decrypt` returns **zero matches**. `lib/secure-credentials.ts`, despite the name, only reads two env vars and validates their length — it encrypts nothing.
+### 1.2 Findings that determine the plan
 
-Consequence: any Atlas snapshot, backup dump, read-only replica, log of a `settings.getAll()` response, or leaked connection string yields **live Stripe secret keys**. The admin settings UI also round-trips these values, so they traverse the API layer in cleartext.
+**F-1 — Provider secrets were stored in plaintext. `P0` — Code resolved, rollout pending**
 
-This must be fixed before any further work on centralising config in the database. The current design actively increases blast radius with each new integration moved into the DB.
+Secret-class `SiteSetting` values are now encrypted with AES-256-GCM at the repository boundary, use key versions, and are redacted from administrator read paths. A restartable migration command handles legacy plaintext and older key versions.
 
-**F-2 — Multi-tenancy does not exist, and `env` occupies its seat. `P0` decision**
+Remaining operational work:
 
-Zero occurrences of `tenant`, `organization`, or `workspace` as architectural concepts anywhere in the codebase. The only hits are a CMS content type seeded as "Team Member" and one seed description string.
+- configure encryption keys in each deployed API environment;
+- run the migration against each real database;
+- rotate Clerk and payment-provider credentials in their provider dashboards.
 
-What exists instead is `env: "dev" | "production"` on 18 models, enforced by a Prisma `$extends` query extension in `lib/prisma.ts` that injects `env` into `where` and `data`. Crucially, `env` sits in exactly the schema position `tenantId` would need — `@@unique([env, slug])`, `@@unique([env, email])`, `@@index([env, contentTypeSlug, status])`.
+**F-2 — Multi-tenancy does not exist, and `env` occupies its seat. `P0` — Decision resolved**
 
-You cannot add tenancy alongside this without deciding what `env` becomes. This is the single blocking decision in the project. See §2.
+Nineteen models carry `env: "dev" | "production"`. Environment partitioning occupies the schema and index position required by `tenantId`.
 
-**F-3 — The scoping extension has holes that are survivable for `env` and fatal for `tenantId`. `P0`**
+ADR-001 accepts replacement of `env` with `tenantId`. Development, staging, and production will use separate deployments and databases.
 
-`lib/prisma.ts` is the mechanism you will reach for when implementing tenancy. As written it leaks in four ways:
+**F-3 — The current scoping extension is unsafe for tenancy. `P0` — Open**
 
-1. **Nested relation reads are unscoped.** The extension intercepts top-level operations only. `include: { product: {...} }` (17 call sites across `purchase-repository`, `report-repository`, `taxonomy-repository`) and `include: { user: true }` in `lib/user-auth.ts` load related records with no scope filter. Benign for `env` because relations are same-env by construction; a direct cross-tenant read path under tenancy.
-2. **Explicit scope in `where` wins.** The guard is `if (!("env" in args.where))`. Any repository that spreads caller-controlled filters into a `where` lets the caller pin the scope themselves. Under tenancy that is privilege escalation.
-3. **`ENV_SCOPED_MODELS` is a hand-maintained `Set`.** Add a model, forget the Set, and it silently becomes global — no error, no test failure. This is the canonical multi-tenant breach.
-4. **Scope resolution is a module-level global.** `lib/env.ts` caches `cachedEnv` in module scope with a 50ms TTL. Correct for a deployment-wide switch. Under tenancy, a module global is shared across concurrent requests in the same Node process and will bleed tenant context. Tenant scope must be per-request `AsyncLocalStorage`, never a module variable.
+Known issues:
 
-Nested writes are also unscoped, and `basePrisma` is exported from `lib/prisma.ts`, so any accidental import bypasses scoping entirely. Current `basePrisma` usage is correctly limited to `SystemConfig`, the seed, and tests. No raw queries exist — good, keep it that way.
+1. Nested relation reads and writes are not independently scoped.
+2. Caller-supplied `env` is preserved instead of overwritten.
+3. The scoped-model list is hand-maintained; `UserInvitation` is already omitted.
+4. Scope resolution uses module-level mutable state suitable only for a deployment-wide environment.
+5. `basePrisma` can bypass the extension.
 
-**F-4 — Stripe coupling reaches into the schema. `P1`**
+These are survivable for the current environment partition but release blockers for tenant data.
 
-`lib/payment/` already has the right shape: a `PaymentProviderInterface`, a provider registry, and a `woocommerce-provider.ts`. But:
+**F-4 — Stripe coupling reaches into the schema. `P1` — Open**
 
-- The registry has WooCommerce **commented out**, so only Stripe is reachable.
-- The interface leaks its abstraction: `getCustomerSubscriptions()` returns `StripeSubscription[]` and `getCustomerInvoices()` returns `StripeInvoice[]`. A PayMongo or Xendit implementation would have to fabricate Stripe-shaped objects.
-- Provider identity is baked into `schema.prisma`: `Product.stripeTestProductId`, `Product.stripeLiveProductId`, `ProductPrice.stripePriceId`, `User.stripeCustomerId`.
-- 43 files reference Stripe.
+The payment directory has a useful interface and registry shape, but:
 
-The abstraction is roughly a third done. The remaining two-thirds are in the data model, not the interface.
+- WooCommerce remains disabled in the registry;
+- subscription and invoice methods return Stripe-specific types;
+- `User`, `Product`, and `ProductPrice` contain Stripe-specific fields;
+- checkout completion lacks provider webhook authority and idempotent event handling.
 
-**F-5 — Clerk sessions cost a network round-trip each. `P1`**
+**F-5 — Clerk sessions performed a profile network request on every authenticated request. `P1` — Resolved**
 
-`lib/clerk-auth.ts` calls `verifyToken()` and then `clerk.users.getUser(sub)` on **every authenticated request**, purely to read email and name. That is an outbound API call per request, subject to Clerk rate limits, in the hot path. Email and name are already in the JWT claims for standard Clerk session tokens.
+Returning linked users now resolve from the verified provider subject and local database. Profile retrieval occurs only when a new identity needs linking/provisioning and required claims are absent; the fallback is cached.
 
-`verifyToken` is also called without `authorizedParties`, which is Clerk's documented defence against tokens minted for a different frontend origin.
+**F-6 — Clerk auto-provisioning was open and incompletely scoped. `P1` — Resolved**
 
-**F-6 — Clerk auto-provisioning has a scope bug. `P1`**
+Clerk verification now requires authorized frontend origins. New local accounts require an unexpired invitation unless open signup is explicitly enabled. Provider-subject lookup includes explicit current scope, and existing identity links are not reassigned automatically.
 
-In `getClerkUserSession()` (`lib/user-auth.ts`), the initial lookup is `prisma.user.findFirst({ where: { clerkId: clerkPayload.sub } })`. The extension injects `env` into this `where`, so it is scoped — but the schema declares `@@index([env, clerkId])` while `clerkId` alone carries no uniqueness constraint. Two users in different envs sharing a `clerkId` is representable, and the fallback path silently creates a user on any valid token with no invitation check. Combined with F-5, a valid Clerk token from any frontend using the same instance auto-creates an account.
+**F-7 — Binary files live in MongoDB as base64. `P1` — Decision resolved, implementation open**
 
-**F-7 — Binary files live in MongoDB as base64. `P1`**
+ADR-005 accepts provider-neutral object storage. Database rows will retain storage keys and metadata only. T-1001 and T-1002 implement the adapter and migration.
 
-`PurchaseFile.data` (`String`, base64) and `Media.base64Data` store file bytes inline. MongoDB's hard document limit is 16MB and base64 inflates payloads ~33%, giving a real ceiling near 12MB — and every query touching these collections drags the bytes through the driver unless every call site remembers to `select` around them. `Media` also already has a `url` field and a `source: "upload" | "external"` discriminator, so the escape hatch is half-built. For a boilerplate targeting ecommerce and marketplaces this will not hold.
+**F-8 — No reusable RBAC model. `P1` — Decision foundation complete, implementation open**
 
-**F-8 — No RBAC. `P2`**
+`Admin.role` remains a free string and users have no contextual role. ADR-002 establishes organization membership as the role assignment boundary. T-501 through T-503 implement permissions and policy enforcement.
 
-`Admin.role` is a free `String` documented as `"admin" | "editor"`. `User` has no role field at all. There are no permission definitions, no policy layer, no role-permission mapping. The prompt's requirements — teams, roles, permissions, ownership — have no foundation to build on.
+**F-9 — Settings used a hardcoded service allowlist. `P2` — Resolved**
 
-**F-9 — `SiteSetting` keys are a hardcoded allowlist. `P2`**
+The settings registry now owns allowed keys, duplicate detection, and secret classification. Modules can contribute settings without editing `setting-service.ts`.
 
-`ALLOWED_KEYS` in `setting-service.ts` is a 34-entry `Set`. It is a sound security control and I would not remove it. But every new integration requires editing a service file, which contradicts "modular, configurable, reusable". Needs to become a registry that modules contribute to at load time, preserving the allowlist property while removing the central edit.
+**F-10 — Root dependency and naming debt. `P3` — Open**
 
-**F-10 — Root `package.json` carries an unexplained MCP dependency. `P3`**
+The root package remains named `mono-next`. The repository is orchestrated as a monorepo but has no declared pnpm workspace. The root MCP dependency remains unexplained, while `zod` is not yet used by the API validation layer.
 
-`@modelcontextprotocol/sdk ^1.27.1` and `zod ^4.3.6` are root dependencies with no importing code in either app. Dead weight, or an undocumented tool. Also: root `name` is `mono-next` while the repo is `mono-saas`.
+### 1.3 Boilerplate scope
 
-### 1.3 Honest notes on the brief
+The project will provide a strong reusable core for:
 
-Three things in the brief are worth revisiting before they cost you time.
+- tenant isolation;
+- provider-neutral authentication;
+- organizations, teams, invitations, and RBAC;
+- billing abstraction and entitlements;
+- CMS foundations;
+- encrypted configuration;
+- audit logs, feature flags, notifications, webhooks, and integration adapters;
+- API, storage, testing, and deployment foundations.
 
-**"Document everything first, then build" will stall.** Twenty documents written against an architecture that has one unresolved fork (F-2) will need rewriting the moment the fork is resolved. Documentation of what exists is cheap and useful now; documentation of tenancy, teams, and billing cannot be written before those are designed. WS-2 splits this: describe what is real, decide what is not, defer the rest.
-
-**Fix F-1 before the documentation phase.** The brief says no major feature work until architecture is documented. Plaintext live payment keys are not feature work and should not wait behind a writing task.
-
-**The vision list is very wide.** SaaS, CRM, ERP, ecommerce, marketplace, booking, school, membership, community, dashboards, portals, events, subscriptions. A codebase that genuinely serves all thirteen is a framework, and frameworks are where "less code, fewer abstractions" goes to die — the pressure to generalise every model produces exactly the abstraction sprawl the brief prohibits. The realistic version: a strong tenancy + auth + billing + CMS + RBAC core, with domain models left to the consuming product. Worth writing that boundary down as ADR-004 so it can be defended later.
+Business domains such as CRM, ERP, school management, marketplace operations, booking, community feeds, and event management remain consuming-product modules. ADR-004 defines the full boundary and extension rule.
 
 ---
 
-## 2. The blocking decision: `env` vs `tenantId`
+## 2. Accepted architecture decisions
 
-Nothing in WS-3 onward can start until this is settled. Three options:
+The original `env` versus `tenantId` fork is resolved. The accepted decisions are:
 
-**Option A — Replace `env` with `tenantId`.** Environments become separate databases or deployments, as is conventional. `SystemConfig.APP_ENV` and `lib/env.ts` are deleted; `lib/prisma.ts` becomes tenant-scoped. Cleanest end state, single scope key, no compound confusion. Cost: migration of all 18 models, and you lose the dev/prod-in-one-DB convenience the current design was clearly built for.
+1. **ADR-001 — Scope key:** Replace `env` with `tenantId`; separate environments by deployment/database.
+2. **ADR-002 — Tenancy model:** `Tenant` is the isolation/billing boundary; one user-facing `Organization` belongs to each tenant; users are global identities connected through memberships; teams are grouping units inside organizations.
+3. **ADR-003 — Authentication:** Providers verify identity; the local database owns identity links, memberships, roles, invitations, and authorization.
+4. **ADR-004 — Boilerplate scope:** Keep reusable platform foundations in core and business-domain models in optional modules or consuming applications.
+5. **ADR-005 — File storage:** Store bytes in provider-neutral object storage and keep metadata/storage keys in MongoDB.
 
-**Option B — Keep both.** Every scoped model carries `env` and `tenantId`; uniqueness becomes `@@unique([env, tenantId, slug])`. Preserves existing behaviour. Cost: two scope keys forever, every index widens, and the extension must inject both correctly on every path — twice the surface for F-3-class bugs.
-
-**Option C — Generalise to a single `scopeId`.** One key that encodes environment and tenant. Minimal index churn. Cost: a composite key with parsing rules is exactly the implicit magic the brief's "explicit over implicit" principle rules out. Not recommended.
-
-**Recommendation: Option A.** It is the only one that ends with a single, explicit scope key, and it matches how the rest of the industry separates environments. The migration is mechanical — 18 models, one field rename plus a semantic change — and it is far cheaper now, at 24 models and zero production tenants, than at any later point.
+Decision records are maintained in [`docs/decisions/`](decisions/).
 
 ---
 
 ## 3. Workstreams
 
-The detailed implementation roadmap is split into focused files so each workstream can evolve without making the source of truth difficult to review.
+Detailed tasks, dependencies, notes, and acceptance criteria are split into focused roadmap files:
 
 - [WS-0 to WS-2 — Decisions, security, and documentation](roadmap/00-decisions-security-documentation.md)
 - [WS-3 to WS-5 — Multi-tenancy, authentication, and authorization](roadmap/01-tenancy-auth-rbac.md)
@@ -143,39 +155,42 @@ The detailed implementation roadmap is split into focused files so each workstre
 
 ---
 
-## 4. Suggested sequence
+## 4. Current execution sequence
 
-1. **T-103, T-101, T-102** — rotate, encrypt, redact. Nothing else first.
-2. **T-001, T-002** — resolve the scope-key fork.
-3. **T-301 → T-304** — fix the scoping extension *before* any tenant data exists.
-4. **T-305, T-1301** — migrate schema, prove isolation.
-5. **T-501, T-502** — RBAC, since teams and admin split both depend on it.
-6. **T-601, T-602** — team workspace.
-7. **T-701, T-702, T-705** — billing abstraction and webhooks.
-8. **T-801, T-802** — the app split, once everything it touches is stable.
+1. **External rollout for T-101/T-103** — configure encryption key, migrate live rows, and rotate exposed provider credentials.
+2. **T-301 → T-304** — establish per-request tenant context and close every scope-enforcement hole before tenant data exists.
+3. **T-305 + T-1301** — migrate the schema and prove two-tenant isolation.
+4. **T-501 + T-502** — implement permission model and controller policy layer.
+5. **T-601 + T-602** — implement tenant workspace models and invitation flow.
+6. **T-401 + T-403** — finish the provider-neutral authentication registry for member and administrator contexts.
+7. **T-701 + T-702 + T-705** — neutralize billing types/schema and add authoritative webhooks.
+8. **T-1001 + T-1002** — implement object storage and remove base64 payload columns.
+9. **T-801 + T-802** — move administrator presentation into `app-api` and extract shared UI.
 
-Steps 1–4 are the ones that get materially harder with every week of delay. Everything after step 4 is ordinary feature work.
+Tenant isolation work must precede new multi-tenant business features. Billing, storage, and CMS migrations should not introduce new provider-specific schema fields.
 
 ---
 
 ## 5. Progress
 
 | Workstream | Tasks | Done |
-| --- | --- | --- |
-| WS-0 Decisions | 5 | 0 |
-| WS-1 Security | 7 | 0 |
-| WS-2 Documentation | 5 | 0 |
+| --- | ---: | ---: |
+| WS-0 Decisions | 5 | 5 |
+| WS-1 Security | 7 | 4 |
+| WS-2 Documentation | 5 | 2 |
 | WS-3 Multi-tenancy | 6 | 0 |
-| WS-4 Authentication | 3 | 0 |
+| WS-4 Authentication | 3 | 1 |
 | WS-5 Authorization | 3 | 0 |
 | WS-6 Team workspace | 3 | 0 |
 | WS-7 Billing | 5 | 0 |
 | WS-8 CMS refactor | 3 | 0 |
-| WS-9 Configuration | 3 | 0 |
+| WS-9 Configuration | 3 | 2 |
 | WS-10 Database | 3 | 0 |
 | WS-11 API | 2 | 0 |
 | WS-12 Performance | 2 | 0 |
 | WS-13 Testing | 2 | 0 |
 | WS-14 Production | 3 | 0 |
 | WS-15 Tech debt | 5 | 0 |
-| **Total** | **60** | **0** |
+| **Total** | **60** | **14** |
+
+`In progress` and externally blocked work is not counted as done. The workstream files contain the authoritative status of each task.
