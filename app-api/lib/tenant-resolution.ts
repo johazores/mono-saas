@@ -90,7 +90,12 @@ function normalizePathPrefix(rawPrefix: string | undefined): string {
   const raw = rawPrefix?.trim() || DEFAULT_PATH_PREFIX;
   const prefixed = raw.startsWith("/") ? raw : `/${raw}`;
   const normalized = prefixed.replace(/\/+$/, "");
-  if (!normalized || normalized === "/" || normalized.includes("?") || normalized.includes("#")) {
+  if (
+    !normalized ||
+    normalized === "/" ||
+    normalized.includes("?") ||
+    normalized.includes("#")
+  ) {
     throw new Error("Tenant path prefix must be a non-root URL path prefix.");
   }
   return normalized;
@@ -124,7 +129,9 @@ function resolvePathPrefix(
 function normalizeHeaderName(value: string | undefined, fallback: string): string {
   const name = (value?.trim() || fallback).toLowerCase();
   if (!/^[a-z0-9!#$%&'*+.^_`|~-]+$/.test(name)) {
-    throw new Error("Tenant trusted-header configuration contains an invalid header name.");
+    throw new Error(
+      "Tenant trusted-header configuration contains an invalid header name.",
+    );
   }
   return name;
 }
@@ -132,7 +139,9 @@ function normalizeHeaderName(value: string | undefined, fallback: string): strin
 function normalizeClockSkew(value: number | undefined): number {
   const seconds = value ?? DEFAULT_MAX_CLOCK_SKEW_SECONDS;
   if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 300) {
-    throw new Error("Tenant trusted-header maxClockSkewSeconds must be between 1 and 300.");
+    throw new Error(
+      "Tenant trusted-header maxClockSkewSeconds must be between 1 and 300.",
+    );
   }
   return seconds;
 }
@@ -163,13 +172,18 @@ function trustedHeaderPayload(
 export function signTrustedTenantHeader(
   secret: string,
   timestamp: string,
-  key: string,
+  rawKey: string,
   input: TenantRequestInput,
 ): string {
   if (secret.length < MIN_TRUSTED_HEADER_SECRET_LENGTH) {
     throw new Error(
       `Tenant trusted-header secret must be at least ${MIN_TRUSTED_HEADER_SECRET_LENGTH} characters.`,
     );
+  }
+
+  const key = normalizeTenantKey(rawKey);
+  if (!key) {
+    throw new Error("Tenant trusted-header key is invalid.");
   }
 
   return crypto
@@ -222,12 +236,7 @@ function resolveTrustedHeader(
     return null;
   }
 
-  const expected = signTrustedTenantHeader(
-    secret,
-    timestamp,
-    key,
-    input,
-  );
+  const expected = signTrustedTenantHeader(secret, timestamp, key, input);
   if (!safeEqualHex(signature, expected)) return null;
 
   return { key, source: "trusted-header" };
