@@ -115,9 +115,9 @@ ADR-005 accepts provider-neutral object storage. Database rows will retain stora
 
 The settings registry owns allowed keys, duplicate detection, and secret classification. Authentication, Clerk-security, payment, and site configuration use short async TTL caches with explicit write invalidation and stale in-flight protection.
 
-**F-10 — Root dependency and naming debt. `P3` — Open**
+**F-10 — Root dependency and naming debt. `P3` — Resolved**
 
-The root package remains named `mono-next`. The repository is orchestrated as a monorepo but has no declared pnpm workspace. The root MCP dependency remains unexplained, while `zod` is not yet used by the API validation layer.
+The root package is now named `mono-saas` and contains orchestration-only development dependencies. The unused MCP SDK was removed, and `zod` moved to `app-api`, where the request-validation workstream will use it. A declared pnpm workspace remains an optional structural improvement rather than unexplained runtime debt.
 
 ### 1.3 Boilerplate scope
 
@@ -197,7 +197,7 @@ Tenant isolation work must precede new multi-tenant business features. Billing, 
 | WS-12 Performance | 2 | 1 |
 | WS-13 Testing | 2 | 0 |
 | WS-14 Production | 3 | 0 |
-| WS-15 Tech debt | 5 | 0 |
-| **Total** | **60** | **18** |
+| WS-15 Tech debt | 5 | 2 |
+| **Total** | **60** | **20** |
 
 `In progress` and externally blocked work is not counted as done. The workstream files contain the authoritative status of each task.

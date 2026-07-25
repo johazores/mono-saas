@@ -1,8 +1,8 @@
 {
-  "name": "mono-next",
+  "name": "mono-saas",
   "version": "1.0.0",
   "private": true,
-  "description": "Mono repo for Next.js applications",
+  "description": "Reusable SaaS boilerplate with separate API and client applications",
   "author": {
     "name": "Johanssen Azores",
     "email": "johanss.zip@gmail.com"
@@ -38,10 +38,6 @@
     "app-api/**/*.{js,jsx,ts,tsx,css,md,mdx,yml,yaml}": [
       "prettier --write"
     ]
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
-    "zod": "^4.3.6"
   },
   "packageManager": "pnpm@10.32.1+sha512.a706938f0e89ac1456b6563eab4edf1d1faf3368d1191fc5c59790e96dc918e4456ab2e67d613de1043d2e8c81f87303e6b40d4ffeca9df15ef1ad567348f2be"
 }
