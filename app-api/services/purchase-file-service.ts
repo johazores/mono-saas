@@ -65,7 +65,7 @@ export const purchaseFileService = {
       };
     }
 
-    if (!file.data) {
+    if (file.data == null) {
       throw new Error("File content is unavailable.");
     }
 
