@@ -42,9 +42,9 @@
 - **Acceptance:** Adding a provider means adding one file plus a registry entry; no edits to `user-auth.ts`.
 
 **T-402 · Drop the per-request Clerk fetch**
-- **Priority** P1 · **Status** Not started · **Complexity** S · **Depends on** —
-- **Notes:** Resolves F-5. Read email and name from JWT claims; fall back to `getUser()` only when a claim is genuinely absent, and cache that.
-- **Acceptance:** Authenticated requests make zero outbound calls in the common path; measured before and after.
+- **Priority** P1 · **Status** Done · **Complexity** S · **Depends on** —
+- **Notes:** Returning linked users are resolved from the local database using the verified Clerk subject. Email/name claims are used when present. A cached Clerk profile lookup occurs only for a new identity that still needs linking or provisioning.
+- **Acceptance:** Authenticated requests make zero outbound profile calls in the common path; fallback profile calls are cached and covered by tests.
 
 **T-403 · Admin auth behind the same interface**
 - **Priority** P2 · **Status** Not started · **Complexity** M · **Depends on** T-401
