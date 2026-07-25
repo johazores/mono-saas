@@ -141,3 +141,247 @@ describe("applyEnvScope", () => {
     });
   });
 });
+
+describe("nested relation read scope", () => {
+  it("filters list includes to the active environment", () => {
+    const args = applyEnvScope(
+      "findMany",
+      { include: { purchases: true } },
+      "dev",
+      "User",
+    );
+
+    expect(args).toEqual({
+      where: { env: "dev" },
+      include: {
+        purchases: { where: { env: "dev" } },
+      },
+    });
+  });
+
+  it("constrains required to-one includes at the parent query", () => {
+    const args = applyEnvScope(
+      "findMany",
+      { include: { user: true, product: true } },
+      "dev",
+      "Purchase",
+    );
+
+    expect(args.where).toEqual({
+      env: "dev",
+      AND: [
+        { user: { is: { env: "dev" } } },
+        { product: { is: { env: "dev" } } },
+      ],
+    });
+  });
+
+  it("allows an optional to-one relation to be null but never cross-scope", () => {
+    const args = applyEnvScope(
+      "findFirst",
+      { include: { parent: true } },
+      "dev",
+      "User",
+    );
+
+    expect(args.where).toEqual({
+      env: "dev",
+      AND: [
+        {
+          OR: [
+            { parent: { is: null } },
+            { parent: { is: { env: "dev" } } },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("scopes nested list and to-one selections recursively", () => {
+    const args = applyEnvScope(
+      "findMany",
+      {
+        include: {
+          user: {
+            include: {
+              parent: true,
+              purchases: { include: { product: true } },
+            },
+          },
+        },
+      },
+      "dev",
+      "Purchase",
+    );
+
+    expect(args.include).toEqual({
+      user: {
+        include: {
+          parent: true,
+          purchases: {
+            include: { product: true },
+            where: {
+              env: "dev",
+              AND: [{ product: { is: { env: "dev" } } }],
+            },
+          },
+        },
+      },
+    });
+
+    expect(args.where).toEqual({
+      env: "dev",
+      AND: [
+        {
+          user: {
+            is: {
+              env: "dev",
+              AND: [
+                {
+                  OR: [
+                    { parent: { is: null } },
+                    { parent: { is: { env: "dev" } } },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
+  });
+});
+
+describe("nested relation write scope", () => {
+  it("scopes nested connects and creates", () => {
+    const args = applyEnvScope(
+      "create",
+      {
+        data: {
+          amount: 10,
+          currency: "USD",
+          user: { connect: { id: "user-id", env: "production" } },
+          product: { connect: { id: "product-id" } },
+          files: {
+            create: {
+              fileName: "guide.pdf",
+              data: "base64",
+              env: "production",
+            },
+          },
+        },
+      },
+      "dev",
+      "Purchase",
+    );
+
+    expect(args.data).toEqual({
+      env: "dev",
+      amount: 10,
+      currency: "USD",
+      user: { connect: { id: "user-id", env: "dev" } },
+      product: { connect: { id: "product-id", env: "dev" } },
+      files: {
+        create: {
+          fileName: "guide.pdf",
+          data: "base64",
+          env: "dev",
+        },
+      },
+    });
+  });
+
+  it("scopes connectOrCreate and nested upsert branches", () => {
+    const args = applyEnvScope(
+      "update",
+      {
+        where: { id: "user-id" },
+        data: {
+          purchases: {
+            connectOrCreate: {
+              where: { id: "purchase-id", env: "production" },
+              create: {
+                amount: 20,
+                currency: "USD",
+                product: { connect: { id: "product-id" } },
+              },
+            },
+            upsert: {
+              where: { id: "purchase-two" },
+              create: {
+                amount: 30,
+                currency: "USD",
+                product: { connect: { id: "product-two" } },
+              },
+              update: {
+                product: { connect: { id: "product-three" } },
+              },
+            },
+          },
+        },
+      },
+      "dev",
+      "User",
+    );
+
+    const purchases = (args.data as Record<string, unknown>).purchases as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+    expect(purchases.connectOrCreate.where).toEqual({
+      id: "purchase-id",
+      env: "dev",
+    });
+    expect(purchases.connectOrCreate.create).toMatchObject({
+      env: "dev",
+      product: { connect: { id: "product-id", env: "dev" } },
+    });
+    expect(purchases.upsert.where).toEqual({
+      id: "purchase-two",
+      env: "dev",
+    });
+    expect(purchases.upsert.create).toMatchObject({
+      env: "dev",
+      product: { connect: { id: "product-two", env: "dev" } },
+    });
+    expect(purchases.upsert.update).toMatchObject({
+      env: "dev",
+      product: { connect: { id: "product-three", env: "dev" } },
+    });
+  });
+
+  it("scopes nested updateMany and deleteMany filters", () => {
+    const args = applyEnvScope(
+      "update",
+      {
+        where: { id: "user-id" },
+        data: {
+          purchases: {
+            updateMany: {
+              where: { status: "pending", env: "production" },
+              data: { status: "cancelled", env: "production" },
+            },
+            deleteMany: { status: "failed", env: "production" },
+          },
+        },
+      },
+      "dev",
+      "User",
+    );
+
+    const purchases = (args.data as Record<string, unknown>).purchases as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+    expect(purchases.updateMany).toEqual({
+      where: { status: "pending", env: "dev" },
+      data: { status: "cancelled", env: "dev" },
+    });
+    expect(purchases.deleteMany).toEqual({
+      status: "failed",
+      env: "dev",
+    });
+  });
+});
