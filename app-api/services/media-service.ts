@@ -95,7 +95,7 @@ export const mediaService = {
       };
     }
 
-    if (!item.base64Data) return null;
+    if (item.base64Data == null) return null;
 
     return {
       kind: "legacy",
@@ -120,7 +120,7 @@ export const mediaService = {
     return mediaRepository.delete(id);
   },
 
-  /** Return storage-backed signed access or legacy base64 content for serving. */
+  /** Legacy compatibility: return the raw media record. */
   getFileById(id: string) {
     return mediaRepository.findById(id);
   },
