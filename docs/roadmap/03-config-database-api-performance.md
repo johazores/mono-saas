@@ -13,8 +13,8 @@
 - **Acceptance:** Documented list; startup validation; `.env.example` matches exactly.
 
 **T-903 · Settings change audit**
-- **Priority** P2 · **Status** In progress · **Complexity** S · **Depends on** T-101
-- **Notes:** Setting writes already log actor and key without logging values. Add a focused controller test proving secret values never enter activity metadata.
+- **Priority** P2 · **Status** Done · **Complexity** S · **Depends on** T-101
+- **Notes:** Setting writes log actor and key without logging values. A controller test asserts that submitted secret values never enter activity metadata.
 - **Acceptance:** Writes audited; test asserts secret values never reach the log.
 
 ---
