@@ -22,11 +22,12 @@ function hydrateSetting<T extends { key: string; value: unknown }>(record: T): T
 
 export const settingRepository = {
   async get(key: string) {
-    const record = await prisma.siteSetting.findUnique({
-      where: { env_key: { env: await getAppEnv(), key } },
-    });
     const tenantId = getTenantId();
-    if (tenantId && record?.tenantId !== tenantId) return null;
+    const record = tenantId
+      ? await prisma.siteSetting.findFirst({ where: { tenantId, key } })
+      : await prisma.siteSetting.findUnique({
+          where: { env_key: { env: await getAppEnv(), key } },
+        });
     return record ? hydrateSetting(record) : null;
   },
 
