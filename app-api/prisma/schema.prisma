@@ -7,6 +7,78 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Tenant {
+  id           String         @id @default(auto()) @map("_id") @db.ObjectId
+  key          String         @unique
+  name         String
+  status       String         @default("active")
+  domains      TenantDomain[]
+  organization Organization?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model TenantDomain {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  tenantId  String   @db.ObjectId
+  host      String   @unique
+  isPrimary Boolean  @default(false)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model Organization {
+  id          String                   @id @default(auto()) @map("_id") @db.ObjectId
+  tenantId    String                   @unique @db.ObjectId
+  name        String
+  slug        String
+  status      String                   @default("active")
+  tenant      Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships OrganizationMembership[]
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  @@index([slug])
+}
+
+model OrganizationMembership {
+  id                 String                   @id @default(auto()) @map("_id") @db.ObjectId
+  tenantId           String                   @db.ObjectId
+  organizationId     String                   @db.ObjectId
+  userId             String                   @db.ObjectId
+  parentMembershipId String?                  @db.ObjectId
+  ancestors          String[]                 @db.ObjectId
+  status             String                   @default("active")
+  organization       Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user               User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent             OrganizationMembership?  @relation("OrganizationMembershipHierarchy", fields: [parentMembershipId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children           OrganizationMembership[] @relation("OrganizationMembershipHierarchy")
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([parentMembershipId])
+}
+
+model ExternalIdentity {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  provider  String
+  subject   String
+  email     String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, subject])
+  @@index([userId, provider])
+}
+
 model Admin {
   id                  String         @id @default(auto()) @map("_id") @db.ObjectId
   name                String
@@ -23,47 +95,55 @@ model Admin {
 }
 
 model User {
-  id                  String         @id @default(auto()) @map("_id") @db.ObjectId
-  env                 String         @default("dev") // dev | production
-  email               String
-  clerkId             String?
-  name                String
-  passwordHash        String
-  stripeCustomerId    String?        // Stripe customer ID for billing portal
-  status              String         @default("active") // active | disabled
-  parentId            String?        @db.ObjectId
-  ancestors           String[]       @db.ObjectId // materialized path of parent IDs (e.g. [parentId])
-  failedLoginAttempts Int            @default(0)
-  lockedUntil         DateTime?
-  lastLoginAt         DateTime?
-  phone               String?
-  address             Json?
-  parent              User?          @relation("UserHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  children            User[]         @relation("UserHierarchy")
-  sessions            UserSession[]
-  purchases           Purchase[]
-  memberships         Membership[]
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  id                      String                   @id @default(auto()) @map("_id") @db.ObjectId
+  env                     String                   @default("dev") // dev | production
+  tenantId                String?                  @db.ObjectId
+  email                   String
+  clerkId                 String?
+  name                    String
+  passwordHash            String
+  stripeCustomerId        String?                  // Stripe customer ID for billing portal
+  status                  String                   @default("active") // active | disabled
+  parentId                String?                  @db.ObjectId
+  ancestors               String[]                 @db.ObjectId // materialized path of parent IDs (e.g. [parentId])
+  failedLoginAttempts     Int                      @default(0)
+  lockedUntil             DateTime?
+  lastLoginAt             DateTime?
+  phone                   String?
+  address                 Json?
+  parent                  User?                    @relation("UserHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children                User[]                   @relation("UserHierarchy")
+  sessions                UserSession[]
+  purchases               Purchase[]
+  memberships             Membership[]
+  organizationMemberships OrganizationMembership[]
+  externalIdentities      ExternalIdentity[]
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
 
   @@unique([env, email])
   @@index([env, clerkId])
+  @@index([tenantId])
 }
 
 model UserSession {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   env       String   @default("dev") // dev | production
+  tenantId  String?  @db.ObjectId
   userId    String   @db.ObjectId
   tokenHash String   @unique
   expiresAt DateTime
   user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model UserInvitation {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   env       String   @default("dev")
+  tenantId  String?  @db.ObjectId
   email     String
   name      String?
   tokenHash String   @unique
@@ -74,6 +154,7 @@ model UserInvitation {
   updatedAt DateTime @updatedAt
 
   @@index([env, email])
+  @@index([tenantId])
 }
 
 model AdminSession {
@@ -89,6 +170,7 @@ model AdminSession {
 model ActivityLog {
   id         String   @id @default(auto()) @map("_id") @db.ObjectId
   env        String   @default("dev") // dev | production
+  tenantId   String?  @db.ObjectId
   actor      String // "admin" | "user" | "system"
   actorId    String?  @db.ObjectId
   actorEmail String?
@@ -101,11 +183,14 @@ model ActivityLog {
   method     String? // HTTP method
   path       String? // Request path
   createdAt  DateTime @default(now())
+
+  @@index([tenantId])
 }
 
 model Product {
   id                  String         @id @default(auto()) @map("_id") @db.ObjectId
   env                 String         @default("dev") // dev | production
+  tenantId            String?        @db.ObjectId
   name                String
   slug                String
   description         String?
@@ -126,11 +211,13 @@ model Product {
   updatedAt           DateTime       @updatedAt
 
   @@unique([env, slug])
+  @@index([tenantId])
 }
 
 model ProductPrice {
   id              String    @id @default(auto()) @map("_id") @db.ObjectId
   env             String    @default("dev") // dev | production
+  tenantId        String?   @db.ObjectId
   productId       String    @db.ObjectId
   label           String    // e.g. "Monthly 2024", "Launch Offer"
   stripePriceId   String    // Stripe price ID
@@ -145,11 +232,14 @@ model ProductPrice {
   product         Product   @relation(fields: [productId], references: [id])
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  @@index([tenantId])
 }
 
 model Purchase {
   id              String         @id @default(auto()) @map("_id") @db.ObjectId
   env             String         @default("dev") // dev | production
+  tenantId        String?        @db.ObjectId
   userId          String         @db.ObjectId
   productId       String         @db.ObjectId
   status          String         @default("completed") // pending | completed | refunded | failed | active | cancelled | expired
@@ -165,11 +255,14 @@ model Purchase {
   files           PurchaseFile[]
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+
+  @@index([tenantId])
 }
 
 model PurchaseFile {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
   env             String   @default("dev") // dev | production
+  tenantId        String?  @db.ObjectId
   purchaseId      String   @db.ObjectId
   fileName        String   // Display name
   mimeType        String   @default("application/octet-stream")
@@ -182,11 +275,14 @@ model PurchaseFile {
   purchase        Purchase @relation(fields: [purchaseId], references: [id])
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model Membership {
   id          String    @id @default(auto()) @map("_id") @db.ObjectId
   env         String    @default("dev") // dev | production
+  tenantId    String?   @db.ObjectId
   userId      String    @db.ObjectId
   type        String // "purchase"
   sourceId    String    @db.ObjectId // purchaseId
@@ -196,11 +292,14 @@ model Membership {
   user        User      @relation(fields: [userId], references: [id])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([tenantId])
 }
 
 model Feature {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   env         String   @default("dev") // dev | production
+  tenantId    String?  @db.ObjectId
   key         String
   description String
   category    String
@@ -210,22 +309,26 @@ model Feature {
   updatedAt   DateTime @updatedAt
 
   @@unique([env, key])
+  @@index([tenantId])
 }
 
 model SiteSetting {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   env       String   @default("dev") // dev | production
+  tenantId  String?  @db.ObjectId
   key       String
   value     Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([env, key])
+  @@index([tenantId])
 }
 
 model CheckoutSession {
   id         String   @id @default(auto()) @map("_id") @db.ObjectId
   env        String   @default("dev") // dev | production
+  tenantId   String?  @db.ObjectId
   sessionId  String   @unique // Payment provider session ID
   userId     String?  @db.ObjectId // null for guest checkout
   guestEmail String? // Guest checkout email
@@ -236,6 +339,8 @@ model CheckoutSession {
   metadata   Json?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 // ---------------------------------------------------------------------------
@@ -245,6 +350,7 @@ model CheckoutSession {
 model Page {
   id             String   @id @default(auto()) @map("_id") @db.ObjectId
   env            String   @default("dev") // dev | production
+  tenantId       String?  @db.ObjectId
   title          String
   slug           String
   status         String   @default("draft") // draft | published
@@ -256,11 +362,13 @@ model Page {
   updatedAt      DateTime @updatedAt
 
   @@unique([env, slug])
+  @@index([tenantId])
 }
 
 model ContentType {
   id             String        @id @default(auto()) @map("_id") @db.ObjectId
   env            String        @default("dev") // dev | production
+  tenantId       String?       @db.ObjectId
   name           String
   slug           String
   pluralName     String
@@ -277,11 +385,13 @@ model ContentType {
   updatedAt      DateTime      @updatedAt
 
   @@unique([env, slug])
+  @@index([tenantId])
 }
 
 model ContentItem {
   id              String      @id @default(auto()) @map("_id") @db.ObjectId
   env             String      @default("dev") // dev | production
+  tenantId        String?     @db.ObjectId
   contentTypeId   String      @db.ObjectId
   contentTypeSlug String
   contentType     ContentType @relation(fields: [contentTypeId], references: [id])
@@ -295,11 +405,13 @@ model ContentItem {
 
   @@unique([env, contentTypeSlug, slug])
   @@index([env, contentTypeSlug, status])
+  @@index([tenantId])
 }
 
 model Taxonomy {
   id           String         @id @default(auto()) @map("_id") @db.ObjectId
   env          String         @default("dev") // dev | production
+  tenantId     String?        @db.ObjectId
   name         String
   slug         String
   pluralName   String
@@ -313,11 +425,13 @@ model Taxonomy {
   updatedAt    DateTime       @updatedAt
 
   @@unique([env, slug])
+  @@index([tenantId])
 }
 
 model TaxonomyTerm {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   env         String   @default("dev") // dev | production
+  tenantId    String?  @db.ObjectId
   taxonomyId  String   @db.ObjectId
   taxonomy    Taxonomy @relation(fields: [taxonomyId], references: [id], onDelete: Cascade)
   name        String
@@ -331,11 +445,13 @@ model TaxonomyTerm {
 
   @@unique([env, taxonomyId, slug])
   @@index([env, taxonomyId, parentId])
+  @@index([tenantId])
 }
 
 model Media {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
   env             String   @default("dev") // dev | production
+  tenantId        String?  @db.ObjectId
   source          String   @default("upload") // upload | external
   fileName        String
   originalName    String
@@ -350,11 +466,14 @@ model Media {
   checksum        String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model BlockTemplate {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   env         String   @default("dev") // dev | production
+  tenantId    String?  @db.ObjectId
   name        String
   slug        String
   description String?
@@ -369,6 +488,7 @@ model BlockTemplate {
   updatedAt   DateTime @updatedAt
 
   @@unique([env, slug])
+  @@index([tenantId])
 }
 
 model SystemConfig {
