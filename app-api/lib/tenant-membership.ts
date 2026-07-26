@@ -47,6 +47,26 @@ async function requireWorkspaceUser(
   return user;
 }
 
+async function findWorkspaceMembership(
+  workspace: TenantWorkspace,
+  userId: string,
+) {
+  return basePrisma.organizationMembership.findUnique({
+    where: {
+      organizationId_userId: {
+        organizationId: workspace.organizationId,
+        userId,
+      },
+    },
+    select: {
+      id: true,
+      tenantId: true,
+      status: true,
+      ancestors: true,
+    },
+  });
+}
+
 /** Existing identities never gain membership merely by selecting a tenant. */
 export async function hasActiveCurrentTenantMembership(
   userId: string,
@@ -105,15 +125,7 @@ export async function provisionNewUserTenantMembership(
     // Concurrent first-login/registration attempts may race on the compound
     // organization+user unique. Re-read only to accept the exact same active
     // membership; never repair or reassign a conflicting membership silently.
-    const existing = await basePrisma.organizationMembership.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: workspace.organizationId,
-          userId,
-        },
-      },
-      select: { tenantId: true, status: true },
-    });
+    const existing = await findWorkspaceMembership(workspace, userId);
 
     if (
       existing?.tenantId === workspace.tenantId &&
@@ -142,21 +154,10 @@ export async function syncLegacySubUserTenantMembership(
     requireWorkspaceUser(userId, workspace),
   ]);
 
-  const parentMembership = await basePrisma.organizationMembership.findUnique({
-    where: {
-      organizationId_userId: {
-        organizationId: workspace.organizationId,
-        userId: parentUserId,
-      },
-    },
-    select: {
-      id: true,
-      tenantId: true,
-      status: true,
-      ancestors: true,
-    },
-  });
-
+  const parentMembership = await findWorkspaceMembership(
+    workspace,
+    parentUserId,
+  );
   if (
     !parentMembership ||
     parentMembership.tenantId !== workspace.tenantId ||
@@ -166,27 +167,45 @@ export async function syncLegacySubUserTenantMembership(
   }
 
   const ancestors = [...parentMembership.ancestors, parentMembership.id];
-  await basePrisma.organizationMembership.upsert({
-    where: {
-      organizationId_userId: {
+  const hierarchy = {
+    parentMembershipId: parentMembership.id,
+    ancestors,
+  };
+  const existing = await findWorkspaceMembership(workspace, userId);
+
+  if (existing) {
+    if (existing.tenantId !== workspace.tenantId) {
+      throw new TenantWorkspaceError();
+    }
+    await basePrisma.organizationMembership.update({
+      where: { id: existing.id },
+      data: hierarchy,
+    });
+    return;
+  }
+
+  try {
+    await basePrisma.organizationMembership.create({
+      data: {
+        tenantId: workspace.tenantId,
         organizationId: workspace.organizationId,
         userId,
+        ...hierarchy,
+        status: user.status === "active" ? "active" : "disabled",
       },
-    },
-    create: {
-      tenantId: workspace.tenantId,
-      organizationId: workspace.organizationId,
-      userId,
-      parentMembershipId: parentMembership.id,
-      ancestors,
-      status: user.status === "active" ? "active" : "disabled",
-    },
-    update: {
-      tenantId: workspace.tenantId,
-      parentMembershipId: parentMembership.id,
-      ancestors,
-    },
-  });
+    });
+  } catch (error) {
+    // A concurrent hierarchy write may create the same membership first. Only
+    // accept that race when it belongs to the same tenant; never repair a
+    // conflicting tenant assignment silently.
+    const raced = await findWorkspaceMembership(workspace, userId);
+    if (!raced || raced.tenantId !== workspace.tenantId) throw error;
+
+    await basePrisma.organizationMembership.update({
+      where: { id: raced.id },
+      data: hierarchy,
+    });
+  }
 }
 
 /** Keep membership active when a legacy sub-user is detached from its parent. */
@@ -198,15 +217,7 @@ export async function detachLegacySubUserTenantMembership(
 
   await requireWorkspaceUser(userId, workspace);
 
-  const membership = await basePrisma.organizationMembership.findUnique({
-    where: {
-      organizationId_userId: {
-        organizationId: workspace.organizationId,
-        userId,
-      },
-    },
-    select: { id: true, tenantId: true },
-  });
+  const membership = await findWorkspaceMembership(workspace, userId);
   if (!membership || membership.tenantId !== workspace.tenantId) {
     throw new TenantWorkspaceError();
   }
