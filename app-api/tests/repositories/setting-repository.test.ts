@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  findFirst: vi.fn(),
   findUnique: vi.fn(),
   findMany: vi.fn(),
   upsert: vi.fn(),
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     siteSetting: {
+      findFirst: mocks.findFirst,
       findUnique: mocks.findUnique,
       findMany: mocks.findMany,
       upsert: mocks.upsert,
@@ -58,9 +60,9 @@ describe("settingRepository", () => {
     expect(mocks.upsert.mock.calls[0][0].update.value).toBe("clerk");
   });
 
-  it("decrypts a matching tenant secret on repository read", async () => {
+  it("queries and decrypts a matching tenant secret by tenant ownership", async () => {
     mocks.getTenantId.mockReturnValue("tenant-1");
-    mocks.findUnique.mockResolvedValue({
+    mocks.findFirst.mockResolvedValue({
       id: "setting-id",
       env: "dev",
       tenantId: "tenant-1",
@@ -71,24 +73,22 @@ describe("settingRepository", () => {
     });
 
     const record = await settingRepository.get("auth.clerkSecretKey");
+
+    expect(mocks.findFirst).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-1", key: "auth.clerkSecretKey" },
+    });
+    expect(mocks.findUnique).not.toHaveBeenCalled();
     expect(record?.value).toBe("sk_test_private");
   });
 
-  it("rejects an env-unique secret staged to another tenant", async () => {
+  it("does not fall back to another env-unique tenant secret", async () => {
     mocks.getTenantId.mockReturnValue("tenant-1");
-    mocks.findUnique.mockResolvedValue({
-      id: "setting-id",
-      env: "dev",
-      tenantId: "tenant-2",
-      key: "auth.clerkSecretKey",
-      value: encryptSettingValue("sk_other_tenant"),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    mocks.findFirst.mockResolvedValue(null);
 
     await expect(
       settingRepository.get("auth.clerkSecretKey"),
     ).resolves.toBeNull();
+    expect(mocks.findUnique).not.toHaveBeenCalled();
   });
 
   it("qualifies multi-key and all-setting reads by verified tenant", async () => {
