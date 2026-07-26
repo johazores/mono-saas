@@ -108,6 +108,20 @@ These routes establish authoritative request scope before loading CMS data. Thei
 
 This change scopes public reads only. Current CMS administrator CRUD routes are still platform-admin routes and are not silently converted into tenant-admin authorization.
 
+## Tenant-aware runtime settings
+
+Tenant-bound auth, Clerk security, payment, checkout, and other runtime configuration reads flow through `SiteSetting`.
+
+During the staged migration:
+
+- `getMany()` and `getAll()` include the verified `tenantId` when request scope has one;
+- legacy `get(key)` still uses the current `env+key` unique selector, then rejects the row unless its staged `tenantId` matches the verified tenant;
+- secret-class values are hydrated/decrypted only after the tenant ownership check passes;
+- requests without tenant context preserve the current deployment-level settings behavior used by platform administration;
+- tenant-bound `set()` is intentionally blocked until the final `SiteSetting(tenantId,key)` unique index replaces legacy `SiteSetting(env,key)`.
+
+That write restriction is deliberate: the current database index cannot safely store two tenant values for the same key inside one deployment, so runtime isolation must not pretend otherwise before the schema/index cutover.
+
 ## Conditional repository behavior
 
 The current migration deliberately uses conditional filters rather than globally switching Prisma authorization:
