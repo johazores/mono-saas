@@ -5,6 +5,11 @@ import {
   clearUserSession,
   getUserSession,
 } from "@/lib/user-auth";
+import {
+  hasActiveCurrentTenantMembership,
+  provisionNewUserTenantMembership,
+  resolveCurrentTenantWorkspace,
+} from "@/lib/tenant-membership";
 import { userService } from "@/services/user-service";
 import { billingService } from "@/services/billing-service";
 import { settingService } from "@/services/setting-service";
@@ -68,6 +73,9 @@ export async function userLoginController(
 
   try {
     const user = await userService.authenticate(email, password);
+    if (!(await hasActiveCurrentTenantMembership(user.id))) {
+      throw new Error("Tenant membership required.");
+    }
     await createUserSession(user.id, res);
 
     // Sync billing data in background (non-blocking)
@@ -111,11 +119,13 @@ export async function userRegisterController(
   if (!input) return;
 
   try {
+    const workspace = await resolveCurrentTenantWorkspace();
     const user = await userService.register(input);
     if (!user) {
       sendError(res, "Registration failed.", 400);
       return;
     }
+    await provisionNewUserTenantMembership(user.id, workspace);
     await createUserSession(user.id, res);
     await logActivity(req, "user.register", {
       actor: "user",
