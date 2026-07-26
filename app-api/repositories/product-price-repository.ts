@@ -1,16 +1,25 @@
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/request-scope";
 import type { Prisma } from "@prisma/client";
+
+function tenantWhere(): { tenantId?: string } {
+  const tenantId = getTenantId();
+  return tenantId ? { tenantId } : {};
+}
 
 export const productPriceRepository = {
   findByProduct(productId: string) {
     return prisma.productPrice.findMany({
-      where: { productId },
+      where: { ...tenantWhere(), productId },
       orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
     });
   },
 
   findById(id: string) {
-    return prisma.productPrice.findUnique({ where: { id } });
+    const tenantId = getTenantId();
+    return tenantId
+      ? prisma.productPrice.findFirst({ where: { id, tenantId } })
+      : prisma.productPrice.findUnique({ where: { id } });
   },
 
   /**
@@ -22,6 +31,7 @@ export const productPriceRepository = {
     const now = new Date();
     const activePrices = await prisma.productPrice.findMany({
       where: {
+        ...tenantWhere(),
         productId,
         mode,
         startDate: { lte: now },

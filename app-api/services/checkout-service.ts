@@ -4,6 +4,11 @@ import { productPriceRepository } from "@/repositories/product-price-repository"
 import { purchaseService } from "@/services/purchase-service";
 import { userRepository } from "@/repositories/user-repository";
 import { getPaymentProvider, getPaymentConfig } from "@/lib/payment";
+import {
+  hasActiveCurrentTenantMembership,
+  provisionNewUserTenantMembership,
+  resolveCurrentTenantWorkspace,
+} from "@/lib/tenant-membership";
 import { hashPassword } from "@/lib/password";
 import crypto from "crypto";
 import type { CreateCheckoutInput, CheckoutResult, PaymentMode } from "@/types";
@@ -42,12 +47,17 @@ export const checkoutService = {
       throw new Error("Cart is empty.");
     }
 
+    if (userId && !(await hasActiveCurrentTenantMembership(userId))) {
+      throw new Error("User is not available for this tenant.");
+    }
+
     const config = await getPaymentConfig();
     if (!config.secretKey) {
       throw new Error("Payment is not configured. Contact the administrator.");
     }
 
-    // Load all products
+    // Product and price repositories apply verified tenant filters when request
+    // scope carries an authoritative tenant.
     const products = await Promise.all(
       input.items.map(async (item) => {
         const product = await productRepository.findById(item.productId);
@@ -58,14 +68,11 @@ export const checkoutService = {
       }),
     );
 
-    // Determine Stripe checkout mode
-    // If any product is recurring, use subscription mode (one-time items become invoice items)
     const hasRecurring = products.some((p) => p.paymentModel === "recurring");
     const mode: "payment" | "subscription" = hasRecurring
       ? "subscription"
       : "payment";
 
-    // Build line items with Stripe price IDs
     const lineItems = await Promise.all(
       products.map(async (product) => {
         const resolved = await resolveStripePriceId(product, config.mode);
@@ -77,7 +84,6 @@ export const checkoutService = {
       }),
     );
 
-    // Metadata to pass through Stripe for the success callback
     const metadata: Record<string, string> = {
       internalItems: JSON.stringify(
         products.map((p) => ({
@@ -100,37 +106,33 @@ export const checkoutService = {
       metadata,
     };
 
-    // If we have a pre-collected guest email, pass it to Stripe to pre-fill
     if (!userId && input.guestEmail) {
       sessionInput.customerEmail = input.guestEmail;
     }
 
-    // If authenticated, link or create Stripe customer so billing portal works
     if (userId) {
       const user = await userRepository.findById(userId);
-      if (user) {
-        let customerId = user.stripeCustomerId;
-        if (!customerId) {
-          customerId = await provider.findOrCreateCustomer(
-            user.email,
-            user.name,
-            config,
-          );
-          await userRepository.update(userId, { stripeCustomerId: customerId });
-        }
-        sessionInput.customerEmail = undefined;
-        sessionInput.metadata = {
-          ...sessionInput.metadata,
-          stripeCustomerId: customerId,
-        };
-        // Pass customer directly (Stripe checkout supports customer param)
-        sessionInput.customerId = customerId;
+      if (!user) throw new Error("User is not available for this tenant.");
+
+      let customerId = user.stripeCustomerId;
+      if (!customerId) {
+        customerId = await provider.findOrCreateCustomer(
+          user.email,
+          user.name,
+          config,
+        );
+        await userRepository.update(userId, { stripeCustomerId: customerId });
       }
+      sessionInput.customerEmail = undefined;
+      sessionInput.metadata = {
+        ...sessionInput.metadata,
+        stripeCustomerId: customerId,
+      };
+      sessionInput.customerId = customerId;
     }
 
     const result = await provider.createCheckoutSession(sessionInput, config);
 
-    // Store checkout session in DB
     await checkoutRepository.create({
       sessionId: result.sessionId,
       userId: userId || undefined,
@@ -144,7 +146,6 @@ export const checkoutService = {
   },
 
   async verifySession(sessionId: string) {
-    // Look up our stored session
     const checkoutSession = await checkoutRepository.findBySessionId(sessionId);
     if (!checkoutSession) {
       throw new Error("Checkout session not found.");
@@ -154,7 +155,6 @@ export const checkoutService = {
       throw new Error("This checkout session has already been processed.");
     }
 
-    // Verify with payment provider
     const config = await getPaymentConfig();
     const provider = getPaymentProvider(config.provider);
     const verified = await provider.verifySession(sessionId, config);
@@ -163,12 +163,15 @@ export const checkoutService = {
       throw new Error("Payment has not been completed.");
     }
 
-    // Determine or create the user
+    const workspace = await resolveCurrentTenantWorkspace();
     let userId = checkoutSession.userId;
     let createdUser = null;
 
-    if (!userId) {
-      // Guest checkout — find existing user by email or create new
+    if (userId) {
+      if (!(await hasActiveCurrentTenantMembership(userId))) {
+        throw new Error("Checkout user is not available for this tenant.");
+      }
+    } else {
       const email = (verified.customerEmail ?? checkoutSession.guestEmail ?? "")
         .toLowerCase()
         .trim();
@@ -179,8 +182,14 @@ export const checkoutService = {
       const existingUser = await userRepository.findByEmailWithPassword(email);
       if (existingUser) {
         userId = existingUser.id;
+
+        // A paid checkout is an explicit tenant transaction. Recover a missing
+        // same-tenant membership (for example after an interrupted first verify)
+        // but the helper refuses users staged to another tenant.
+        if (!(await hasActiveCurrentTenantMembership(userId))) {
+          await provisionNewUserTenantMembership(userId, workspace);
+        }
       } else {
-        // Create a new user with a random password
         const randomPassword = crypto.randomBytes(24).toString("base64url");
         const passwordHash = hashPassword(randomPassword);
         const name =
@@ -195,6 +204,7 @@ export const checkoutService = {
           status: "active",
         });
         userId = newUser.id;
+        await provisionNewUserTenantMembership(newUser.id, workspace);
         createdUser = {
           id: newUser.id,
           email: newUser.email,
@@ -203,24 +213,19 @@ export const checkoutService = {
       }
     }
 
-    // Create purchases for each item
     const items = checkoutSession.items as {
       productId: string;
       quantity: number;
     }[];
     const purchases = [];
 
-    // Link Stripe customer ID to user if available
-    if (userId && verified.customerId) {
+    if (verified.customerId) {
       await userRepository.update(userId, {
         stripeCustomerId: verified.customerId,
       });
     }
 
     for (const item of items) {
-      // Use the Stripe subscription or payment intent ID as externalId so
-      // billing sync (which upserts by sub/invoice ID) recognises the same
-      // purchase and updates it instead of creating a duplicate.
       const externalId =
         verified.subscriptionId || verified.paymentIntentId || sessionId;
 
@@ -230,7 +235,6 @@ export const checkoutService = {
       purchases.push(purchase);
     }
 
-    // Mark session as completed
     await checkoutRepository.updateStatus(checkoutSession.id, "completed");
 
     return {
