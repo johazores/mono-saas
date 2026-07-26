@@ -97,9 +97,9 @@ export function invalidateTenantResolutionConfigCache(): void {
 }
 
 /**
- * Resolve only a candidate key. The returned value is not a database tenant ID
- * and must not be copied into RequestScope. T-305 performs the authoritative
- * tenant/domain/membership lookup before `tenantId` becomes trusted context.
+ * Resolve only a request candidate. This value is never a database tenant ID.
+ * `resolveAuthoritativeTenant()` is the only request-boundary path that may map
+ * the candidate through Tenant/TenantDomain before placing tenantId in scope.
  */
 export async function resolveConfiguredTenantCandidate(
   input: TenantRequestInput,
