@@ -1,6 +1,6 @@
 # Tenant Cutover Verification
 
-- **Status:** Read-only Stage C verifier implemented; runtime cutover remains blocked
+- **Status:** Read-only Stage C verifier implemented; Prisma tenant-authorization cutover remains blocked
 - **Last verified:** 2026-07-26
 - **Roadmap:** T-301, T-303, T-305, T-1301
 
@@ -10,7 +10,7 @@
 
 The package command runs `app-api/scripts/verify-tenant-cutover-entry.mjs` first to validate tenant ownership and canonical domain mappings, then runs the deeper `verify-tenant-cutover.mjs` relation/workspace/collision checks.
 
-It is deliberately read-only. A successful result means the staged data is internally consistent enough to continue toward a runtime cutover. It does **not** make `tenantId` an authorization boundary and does not complete tenant isolation.
+It is deliberately read-only. A successful result means the staged data is internally consistent enough to continue toward a database authorization cutover. It does **not** make `tenantId` the Prisma authorization boundary and does not complete tenant isolation.
 
 ## Prerequisites
 
@@ -112,7 +112,7 @@ A failed verification exits non-zero. Failures in the ownership/domain gate iden
 
 Failure messages from the deeper verifier are capped at 500 entries while `failureCount` retains the true total.
 
-A clean result returns `ready: true`, but the success message still states that runtime scope must remain on `env`.
+A clean result returns `ready: true`, but the success message still states that database authorization must remain on `env` until T-1301 and the separately reviewed Prisma cutover pass.
 
 ## Safety contract
 
@@ -122,20 +122,23 @@ Both verification stages:
 - contain no Prisma create/update/upsert/delete operation;
 - do not execute raw database writes;
 - do not change `env`, `tenantId`, memberships, identities, indexes, or runtime configuration;
-- do not populate `RequestScope.tenantId`;
+- do not populate `RequestScope.tenantId` themselves;
 - do not switch the Prisma guard.
 
 Regression tests statically enforce the no-write contract and assert that the package command routes through the ownership/domain gate.
 
-## What still blocks runtime cutover
+The application request boundary may independently carry an authoritative database tenant ID after resolving an active `Tenant`/`TenantDomain`; that verified context does not alter what this read-only command does and does not make Prisma tenant-aware by itself.
 
-A clean Stage C verifier is only a prerequisite. Runtime cutover remains blocked until:
+## What still blocks the Prisma authorization cutover
+
+A clean Stage C verifier is only a prerequisite. The database cutover remains blocked until:
 
 1. T-1301 runs against a real database with at least two tenants and deliberately proves cross-tenant reads and writes fail;
-2. authoritative request candidates are resolved to real tenant/domain/membership records;
-3. the Prisma scope guard is switched from deployment `env` to the accepted tenant boundary in a separate reviewed change;
-4. final tenant-aware indexes are created after collision checks pass;
-5. global-user and provider-neutral identity migration is completed where required;
-6. the full test suite is green against the post-cutover schema.
+2. tenant-aware routes validate authenticated organization membership where membership is required;
+3. request-scope adoption covers the intended tenant-aware route surface rather than only the current wrapped routes;
+4. the Prisma scope guard is switched from deployment `env` to the accepted tenant boundary in a separate reviewed change;
+5. final tenant-aware indexes are created after collision checks pass;
+6. global-user and provider-neutral identity migration is completed where required;
+7. the full test suite is green against the post-cutover schema.
 
 Legacy `env`, `APP_ENV`, `User.clerkId`, and legacy user hierarchy fields are removed only after those gates pass.
