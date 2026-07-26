@@ -1,4 +1,6 @@
-import { createAsyncTtlCache } from "@/lib/async-ttl-cache";
+import { createAsyncKeyedTtlCache } from "@/lib/async-ttl-cache";
+import { getAppEnv } from "@/lib/env";
+import { getTenantId } from "@/lib/request-scope";
 import { settingRepository } from "@/repositories/setting-repository";
 import {
   isAllowedSettingKey,
@@ -21,6 +23,11 @@ import type {
 } from "@/types";
 
 const CONFIG_CACHE_MS = 5_000;
+
+async function configCacheKey(): Promise<string> {
+  const tenantId = getTenantId();
+  return tenantId ? `tenant:${tenantId}` : `env:${await getAppEnv()}`;
+}
 
 const AUTH_DEFAULTS: AuthConfig = {
   provider: "credentials",
@@ -238,20 +245,26 @@ async function loadSiteConfig(): Promise<SiteConfig> {
   };
 }
 
-const authConfigCache = createAsyncTtlCache(loadAuthConfig, CONFIG_CACHE_MS);
-const clerkSecurityCache = createAsyncTtlCache(
-  loadClerkSecurityConfig,
+const authConfigCache = createAsyncKeyedTtlCache<string, AuthConfig>(
+  () => loadAuthConfig(),
   CONFIG_CACHE_MS,
 );
-const paymentConfigCache = createAsyncTtlCache(
-  loadPaymentConfig,
+const clerkSecurityCache = createAsyncKeyedTtlCache<string, ClerkSecurityConfig>(
+  () => loadClerkSecurityConfig(),
   CONFIG_CACHE_MS,
 );
-const storageConfigCache = createAsyncTtlCache(
-  loadStorageConfig,
+const paymentConfigCache = createAsyncKeyedTtlCache<string, PaymentConfig>(
+  () => loadPaymentConfig(),
   CONFIG_CACHE_MS,
 );
-const siteConfigCache = createAsyncTtlCache(loadSiteConfig, CONFIG_CACHE_MS);
+const storageConfigCache = createAsyncKeyedTtlCache<string, StorageConfig | null>(
+  () => loadStorageConfig(),
+  CONFIG_CACHE_MS,
+);
+const siteConfigCache = createAsyncKeyedTtlCache<string, SiteConfig>(
+  () => loadSiteConfig(),
+  CONFIG_CACHE_MS,
+);
 
 function invalidateConfigCaches(key?: string): void {
   if (!key || key.startsWith("auth.")) {
@@ -368,15 +381,15 @@ export const settingService = {
   },
 
   async getAuthConfig(): Promise<AuthConfig> {
-    return authConfigCache.get();
+    return authConfigCache.get(await configCacheKey());
   },
 
   async getClerkSecurityConfig(): Promise<ClerkSecurityConfig> {
-    return clerkSecurityCache.get();
+    return clerkSecurityCache.get(await configCacheKey());
   },
 
   async getPublicAuthConfig(): Promise<PublicAuthConfig> {
-    const config = await authConfigCache.get();
+    const config = await authConfigCache.get(await configCacheKey());
     return {
       provider: config.provider,
       clerkPublishableKey: config.clerkPublishableKey,
@@ -384,11 +397,11 @@ export const settingService = {
   },
 
   async getPaymentConfig(): Promise<PaymentConfig> {
-    return paymentConfigCache.get();
+    return paymentConfigCache.get(await configCacheKey());
   },
 
   async getPublicPaymentConfig(): Promise<PublicPaymentConfig> {
-    const config = await paymentConfigCache.get();
+    const config = await paymentConfigCache.get(await configCacheKey());
     return {
       provider: config.provider,
       mode: config.mode,
@@ -397,10 +410,10 @@ export const settingService = {
   },
 
   async getStorageConfig(): Promise<StorageConfig | null> {
-    return storageConfigCache.get();
+    return storageConfigCache.get(await configCacheKey());
   },
 
   async getSiteConfig(): Promise<SiteConfig> {
-    return siteConfigCache.get();
+    return siteConfigCache.get(await configCacheKey());
   },
 };
