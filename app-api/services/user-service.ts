@@ -34,6 +34,12 @@ function safeUser(
   return safe as UserRecord;
 }
 
+async function findLegacyHierarchyUser(id: string) {
+  return getTenantId()
+    ? userRepository.findLegacyTenantUserById(id)
+    : userRepository.findById(id);
+}
+
 async function enrichWithPlan(
   user: UserRecord | null,
 ): Promise<UserRecord | null> {
@@ -74,7 +80,7 @@ export const userService = {
   },
 
   async getSubUser(parentId: string, id: string): Promise<UserRecord | null> {
-    const user = await userRepository.findLegacyTenantUserById(id);
+    const user = await findLegacyHierarchyUser(id);
     if (!user || user.parentId !== parentId) return null;
     return enrichWithPlan(safeUser(user as Record<string, unknown>));
   },
@@ -227,7 +233,7 @@ export const userService = {
     parentId: string,
     input: CreateSubUserInput,
   ): Promise<CreateSubUserResult> {
-    const parent = await userRepository.findLegacyTenantUserById(parentId);
+    const parent = await findLegacyHierarchyUser(parentId);
     if (!parent) throw new Error("Parent user not found.");
 
     // Sub-users can only create their own sub-users if they have an
@@ -352,7 +358,7 @@ export const userService = {
     parentId: string,
     subUserId: string,
   ): Promise<UserRecord | null> {
-    const subUser = await userRepository.findLegacyTenantUserById(subUserId);
+    const subUser = await findLegacyHierarchyUser(subUserId);
     if (!subUser) throw new Error("Sub-user not found.");
 
     const record = subUser as UserRecord;
