@@ -67,6 +67,21 @@ The public media-file route establishes request scope before resolving the media
 
 The media collection/item administrator routes are not reclassified here. They remain part of the current platform-admin CMS surface until tenant-admin policy is designed explicitly.
 
+### Public CMS rendering
+
+The SSR public site reads tenant-owned CMS data through:
+
+- `GET /api/cms/public/homepage`;
+- `GET /api/cms/public/pages`;
+- `GET /api/cms/public/pages/:slug`;
+- `GET /api/cms/public/content/:typeSlug`;
+- `GET /api/cms/public/content/:typeSlug/:slug`;
+- `GET /api/cms/public/block-templates`.
+
+These routes establish authoritative request scope before loading CMS data. Their public-read repository paths conditionally add the verified tenant ID to published page/homepage queries, content-type slug lookup, published content list/detail lookup, and active block-template lookup. The same repositories preserve existing deployment-only behavior when no tenant candidate is present.
+
+This change scopes public reads only. Current CMS administrator CRUD routes are still platform-admin routes and are not silently converted into tenant-admin authorization.
+
 ## Conditional repository behavior
 
 The current migration deliberately uses conditional filters rather than globally switching Prisma authorization:
