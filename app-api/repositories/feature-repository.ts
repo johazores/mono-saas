@@ -1,10 +1,16 @@
 import { prisma } from "@/lib/prisma";
 import { getAppEnv } from "@/lib/env";
+import { getTenantId } from "@/lib/request-scope";
+
+function tenantWhere(): { tenantId?: string } {
+  const tenantId = getTenantId();
+  return tenantId ? { tenantId } : {};
+}
 
 export const featureRepository = {
   list() {
     return prisma.feature.findMany({
-      where: { isActive: true },
+      where: { ...tenantWhere(), isActive: true },
       orderBy: [{ sortOrder: "asc" }, { key: "asc" }],
     });
   },
@@ -20,9 +26,12 @@ export const featureRepository = {
   },
 
   async findByKey(key: string) {
-    return prisma.feature.findUnique({
+    const feature = await prisma.feature.findUnique({
       where: { env_key: { env: await getAppEnv(), key } },
     });
+    const tenantId = getTenantId();
+    if (tenantId && feature?.tenantId !== tenantId) return null;
+    return feature;
   },
 
   create(data: {
