@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuthProviderInterface } from "@/lib/auth/types";
 
 vi.mock("@/lib/env", () => ({ getAppEnv: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({
@@ -50,10 +51,14 @@ const resolveWorkspace = vi.mocked(resolveCurrentTenantWorkspace);
 const invitations = vi.mocked(invitationRepository);
 const settings = vi.mocked(settingService);
 
-const provider = {
+const provider: AuthProviderInterface = {
   name: "clerk",
-  verify: vi.fn(),
-  getProfile: vi.fn(),
+  verify: vi.fn(async () => null),
+  getProfile: vi.fn(async () => null),
+};
+const credentialsProvider: AuthProviderInterface = {
+  name: "credentials",
+  verify: vi.fn(async () => null),
 };
 
 beforeEach(() => {
@@ -89,7 +94,7 @@ describe("credentials identity tenancy", () => {
           },
         },
       },
-      { name: "credentials", verify: vi.fn() },
+      credentialsProvider,
     );
 
     expect(result).toBeNull();
