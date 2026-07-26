@@ -9,6 +9,7 @@ const scopedRoutes = [
   "pages/api/users/auth/downloads/[fileId].ts",
   "pages/api/checkout/index.ts",
   "pages/api/checkout/verify.ts",
+  "pages/api/cms/media/[id]/file.ts",
 ];
 
 describe("tenant-owned route request scope", () => {

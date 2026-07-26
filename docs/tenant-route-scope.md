@@ -44,7 +44,7 @@ Both routes establish request scope before member authentication. Purchase and p
 
 `POST /api/checkout/verify`
 
-Both checkout routes now establish request scope.
+Both checkout routes establish request scope.
 
 The soft-reference chain is tenant-qualified before adoption:
 
@@ -58,6 +58,14 @@ The soft-reference chain is tenant-qualified before adoption:
 - purchase creation re-validates product ownership through the tenant-aware product repository.
 
 Guest checkout therefore remains supported without allowing a checkout session, price, product, or user staged to another verified tenant to be reused silently.
+
+### Public CMS media delivery
+
+`GET /api/cms/media/:id/file`
+
+The public media-file route establishes request scope before resolving the media record. When an authoritative tenant exists, `mediaRepository.findById()` uses both the media ID and staged `tenantId`; a media ID from another tenant therefore cannot reach either the legacy base64 response or a signed object-storage redirect. Requests without tenant context preserve the deployment-only lookup used by current platform-admin CMS tooling.
+
+The media collection/item administrator routes are not reclassified here. They remain part of the current platform-admin CMS surface until tenant-admin policy is designed explicitly.
 
 ## Conditional repository behavior
 
