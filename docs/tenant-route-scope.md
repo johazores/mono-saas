@@ -36,6 +36,21 @@ These public routes establish authoritative request scope before reading login p
 
 Runtime configuration caches are scope-aware as well. Auth, Clerk security, payment, storage, and site/theme caches use `tenant:<tenantId>` for verified tenant requests and `env:<APP_ENV>` for deployment-only callers. A cached value or in-flight load for tenant A is never reused for tenant B, while administrator invalidation still clears every cached scope for the affected configuration category.
 
+### Invitation acceptance
+
+`POST /api/users/invitations/accept`
+
+The public acceptance route establishes authoritative request scope before hashing and resolving the invitation token. On a verified tenant request, token lookup and status changes require the staged `UserInvitation.tenantId` to match the current tenant. A token staged to tenant A is therefore invisible from tenant B, and an unstaged legacy/platform invitation does not silently inherit the tenant selected by the request.
+
+Accepted credential invitations now use the same rollback-safe workspace registration path as open registration:
+
+- the User and optional free Purchase/Membership are created in current request scope;
+- the current tenant workspace is resolved and an `OrganizationMembership` is provisioned;
+- if free-plan setup or workspace provisioning fails, registration cleanup removes Membership → Purchase → User in that order;
+- deployment-only acceptance preserves the existing no-tenant behavior.
+
+This is a migration safety layer, not T-602 completion. Platform-admin invitation creation still has no explicit organization/team/role target. Tenant-bound acceptance therefore only works for invitations already staged to that tenant; the final invitation flow must add explicit organization, optional team, and role targets instead of deriving them from `env` or request host.
+
 ### Member purchases
 
 `/api/users/auth/purchases`
