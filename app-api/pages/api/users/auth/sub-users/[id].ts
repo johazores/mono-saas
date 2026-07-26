@@ -1,2 +1,4 @@
 import { subUserItemController } from "@/controllers/sub-user-controller";
-export default subUserItemController;
+import { withRequestScope } from "@/lib/api-request-scope";
+
+export default withRequestScope(subUserItemController);

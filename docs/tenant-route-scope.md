@@ -46,6 +46,24 @@ The member feature route establishes request scope before `requireUser()`. Activ
 
 The feature-definition cache is also scope-aware: verified tenants have separate cache entries, while deployment-only requests are keyed by the resolved application environment. Cache invalidation clears every scope entry so administrator feature changes do not leave stale tenant-specific definitions behind.
 
+### Member sub-users
+
+`GET|POST /api/users/auth/sub-users`
+
+`GET|DELETE /api/users/auth/sub-users/:id`
+
+These routes establish request scope before member authentication. While the legacy `User.parentId` / `User.ancestors` hierarchy still exists, its parent, child-count, descendant, and item lookups are conditionally tenant-qualified without changing the accepted global-`User` target from ADR-002.
+
+Sub-user create/link/revoke also dual-write the replacement `OrganizationMembership` hierarchy:
+
+- child membership `parentMembershipId` points to the parent's membership ID;
+- child membership `ancestors` contains membership IDs, matching the Stage B backfill mapping;
+- an existing env-wide user staged to another tenant cannot be attached as a sub-user;
+- a pre-existing membership carrying another tenant ID fails closed rather than being repaired silently;
+- if membership hierarchy synchronization fails after a legacy link/create/revoke, the service compensates the legacy User write so the two transitional hierarchies do not drift.
+
+This dual-write is migration-only. `OrganizationMembership` remains the final workspace hierarchy and the legacy User hierarchy is still scheduled for removal after cutover verification.
+
 ### Checkout
 
 `POST /api/checkout`

@@ -33,6 +33,40 @@ export async function resolveCurrentTenantWorkspace(): Promise<TenantWorkspace |
   return { tenantId, organizationId: organization.id };
 }
 
+async function requireWorkspaceUser(
+  userId: string,
+  workspace: TenantWorkspace,
+): Promise<{ tenantId: string | null; status: string }> {
+  const user = await basePrisma.user.findUnique({
+    where: { id: userId },
+    select: { tenantId: true, status: true },
+  });
+  if (!user || user.tenantId !== workspace.tenantId) {
+    throw new TenantWorkspaceError();
+  }
+  return user;
+}
+
+async function findWorkspaceMembership(
+  workspace: TenantWorkspace,
+  userId: string,
+) {
+  return basePrisma.organizationMembership.findUnique({
+    where: {
+      organizationId_userId: {
+        organizationId: workspace.organizationId,
+        userId,
+      },
+    },
+    select: {
+      id: true,
+      tenantId: true,
+      status: true,
+      ancestors: true,
+    },
+  });
+}
+
 /** Existing identities never gain membership merely by selecting a tenant. */
 export async function hasActiveCurrentTenantMembership(
   userId: string,
@@ -74,13 +108,7 @@ export async function provisionNewUserTenantMembership(
 ): Promise<void> {
   if (!workspace) return;
 
-  const user = await basePrisma.user.findUnique({
-    where: { id: userId },
-    select: { tenantId: true },
-  });
-  if (!user || user.tenantId !== workspace.tenantId) {
-    throw new TenantWorkspaceError();
-  }
+  await requireWorkspaceUser(userId, workspace);
 
   try {
     await basePrisma.organizationMembership.create({
@@ -97,15 +125,7 @@ export async function provisionNewUserTenantMembership(
     // Concurrent first-login/registration attempts may race on the compound
     // organization+user unique. Re-read only to accept the exact same active
     // membership; never repair or reassign a conflicting membership silently.
-    const existing = await basePrisma.organizationMembership.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: workspace.organizationId,
-          userId,
-        },
-      },
-      select: { tenantId: true, status: true },
-    });
+    const existing = await findWorkspaceMembership(workspace, userId);
 
     if (
       existing?.tenantId === workspace.tenantId &&
@@ -115,4 +135,95 @@ export async function provisionNewUserTenantMembership(
     }
     throw error;
   }
+}
+
+/**
+ * Transitional dual-write for the deprecated User parent/ancestor hierarchy.
+ * Mirrors the Stage B mapping so live sub-user writes stay Stage-C clean until
+ * organization membership becomes the only hierarchy source.
+ */
+export async function syncLegacySubUserTenantMembership(
+  parentUserId: string,
+  userId: string,
+): Promise<void> {
+  const workspace = await resolveCurrentTenantWorkspace();
+  if (!workspace) return;
+
+  const [, user] = await Promise.all([
+    requireWorkspaceUser(parentUserId, workspace),
+    requireWorkspaceUser(userId, workspace),
+  ]);
+
+  const parentMembership = await findWorkspaceMembership(
+    workspace,
+    parentUserId,
+  );
+  if (
+    !parentMembership ||
+    parentMembership.tenantId !== workspace.tenantId ||
+    parentMembership.status !== "active"
+  ) {
+    throw new TenantWorkspaceError();
+  }
+
+  const ancestors = [...parentMembership.ancestors, parentMembership.id];
+  const hierarchy = {
+    parentMembershipId: parentMembership.id,
+    ancestors,
+  };
+  const existing = await findWorkspaceMembership(workspace, userId);
+
+  if (existing) {
+    if (existing.tenantId !== workspace.tenantId) {
+      throw new TenantWorkspaceError();
+    }
+    await basePrisma.organizationMembership.update({
+      where: { id: existing.id },
+      data: hierarchy,
+    });
+    return;
+  }
+
+  try {
+    await basePrisma.organizationMembership.create({
+      data: {
+        tenantId: workspace.tenantId,
+        organizationId: workspace.organizationId,
+        userId,
+        ...hierarchy,
+        status: user.status === "active" ? "active" : "disabled",
+      },
+    });
+  } catch (error) {
+    // A concurrent hierarchy write may create the same membership first. Only
+    // accept that race when it belongs to the same tenant; never repair a
+    // conflicting tenant assignment silently.
+    const raced = await findWorkspaceMembership(workspace, userId);
+    if (!raced || raced.tenantId !== workspace.tenantId) throw error;
+
+    await basePrisma.organizationMembership.update({
+      where: { id: raced.id },
+      data: hierarchy,
+    });
+  }
+}
+
+/** Keep membership active when a legacy sub-user is detached from its parent. */
+export async function detachLegacySubUserTenantMembership(
+  userId: string,
+): Promise<void> {
+  const workspace = await resolveCurrentTenantWorkspace();
+  if (!workspace) return;
+
+  await requireWorkspaceUser(userId, workspace);
+
+  const membership = await findWorkspaceMembership(workspace, userId);
+  if (!membership || membership.tenantId !== workspace.tenantId) {
+    throw new TenantWorkspaceError();
+  }
+
+  await basePrisma.organizationMembership.update({
+    where: { id: membership.id },
+    data: { parentMembershipId: null, ancestors: [] },
+  });
 }
