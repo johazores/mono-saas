@@ -61,10 +61,16 @@ export const invitationService = {
         emailAddress: email,
       });
     } catch (clerkErr: unknown) {
-      // Extract detailed error from Clerk SDK
-      const ce = clerkErr as { errors?: { longMessage?: string; message?: string }[] };
+      const ce = clerkErr as {
+        errors?: { longMessage?: string; message?: string }[];
+      };
       const detail = ce.errors?.[0]?.longMessage || ce.errors?.[0]?.message;
-      throw new Error(detail || (clerkErr instanceof Error ? clerkErr.message : "Failed to send Clerk invitation."));
+      throw new Error(
+        detail ||
+          (clerkErr instanceof Error
+            ? clerkErr.message
+            : "Failed to send Clerk invitation."),
+      );
     }
 
     // Store a local tracking record (use a random hash since Clerk manages the token)
@@ -120,8 +126,9 @@ export const invitationService = {
       throw new Error("This invitation has expired.");
     }
 
-    // Create the user account
-    const user = await userService.register({
+    // Tenant-bound acceptance uses the same workspace-provisioning path as
+    // open registration. Deployment-only acceptance preserves legacy behavior.
+    const user = await userService.registerForCurrentWorkspace({
       name: name || invitation.name || invitation.email.split("@")[0],
       email: invitation.email,
       password,
@@ -129,9 +136,7 @@ export const invitationService = {
 
     if (!user) throw new Error("Failed to create user account.");
 
-    // Mark invitation as accepted
     await invitationRepository.updateStatus(invitation.id, "accepted");
-
     return user;
   },
 
