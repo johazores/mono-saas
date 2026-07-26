@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getAppEnv } from "@/lib/env";
+import { getTenantId } from "@/lib/request-scope";
 import type { Prisma } from "@prisma/client";
 
 const safeSelect = {
@@ -18,6 +19,11 @@ const safeSelect = {
   updatedAt: true,
 } as const;
 
+function tenantWhere(): { tenantId?: string } {
+  const tenantId = getTenantId();
+  return tenantId ? { tenantId } : {};
+}
+
 export const userRepository = {
   list() {
     return prisma.user.findMany({
@@ -30,6 +36,16 @@ export const userRepository = {
       where: { id },
       select: safeSelect,
     });
+  },
+  /** Transitional lookup for the deprecated User parent/ancestor hierarchy only. */
+  findLegacyTenantUserById(id: string) {
+    const tenantId = getTenantId();
+    return tenantId
+      ? prisma.user.findFirst({
+          where: { id, tenantId },
+          select: safeSelect,
+        })
+      : prisma.user.findUnique({ where: { id }, select: safeSelect });
   },
   async findByEmailWithPassword(email: string) {
     return prisma.user.findUnique({
@@ -48,17 +64,17 @@ export const userRepository = {
   },
   findByParentId(parentId: string) {
     return prisma.user.findMany({
-      where: { parentId },
+      where: { ...tenantWhere(), parentId },
       orderBy: [{ createdAt: "desc" }],
       select: safeSelect,
     });
   },
   countChildren(parentId: string) {
-    return prisma.user.count({ where: { parentId } });
+    return prisma.user.count({ where: { ...tenantWhere(), parentId } });
   },
   findDescendants(ancestorId: string) {
     return prisma.user.findMany({
-      where: { ancestors: { has: ancestorId } },
+      where: { ...tenantWhere(), ancestors: { has: ancestorId } },
       orderBy: [{ createdAt: "desc" }],
       select: safeSelect,
     });
