@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/request-scope";
 
 export const checkoutRepository = {
   create(data: {
@@ -14,13 +15,22 @@ export const checkoutRepository = {
   },
 
   findBySessionId(sessionId: string) {
-    return prisma.checkoutSession.findUnique({ where: { sessionId } });
+    const tenantId = getTenantId();
+    return tenantId
+      ? prisma.checkoutSession.findFirst({ where: { sessionId, tenantId } })
+      : prisma.checkoutSession.findUnique({ where: { sessionId } });
   },
 
   updateStatus(id: string, status: string) {
-    return prisma.checkoutSession.update({
-      where: { id },
-      data: { status },
-    });
+    const tenantId = getTenantId();
+    return tenantId
+      ? prisma.checkoutSession.updateMany({
+          where: { id, tenantId },
+          data: { status },
+        })
+      : prisma.checkoutSession.update({
+          where: { id },
+          data: { status },
+        });
   },
 };
