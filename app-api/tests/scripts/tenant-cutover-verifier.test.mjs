@@ -3,10 +3,19 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
-const script = path.join(process.cwd(), "scripts", "verify-tenant-cutover.mjs");
+const entryScript = path.join(
+  process.cwd(),
+  "scripts",
+  "verify-tenant-cutover-entry.mjs",
+);
+const verifierScript = path.join(
+  process.cwd(),
+  "scripts",
+  "verify-tenant-cutover.mjs",
+);
 
 function run(args) {
-  return spawnSync(process.execPath, [script, ...args], {
+  return spawnSync(process.execPath, [entryScript, ...args], {
     cwd: process.cwd(),
     encoding: "utf8",
     env: {
@@ -51,14 +60,29 @@ describe("tenant cutover verifier CLI", () => {
 });
 
 describe("tenant cutover verifier source safety", () => {
-  it("contains no Prisma write operation", () => {
-    const source = fs.readFileSync(script, "utf8");
-    const writeCall =
-      /\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/;
-    const rawWrite = /\$(executeRaw|executeRawUnsafe|runCommandRaw)\s*\(/;
+  const writeCall =
+    /\.(create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/;
+  const rawWrite = /\$(executeRaw|executeRawUnsafe|runCommandRaw)\s*\(/;
 
-    expect(source).not.toMatch(writeCall);
-    expect(source).not.toMatch(rawWrite);
-    expect(source).not.toContain("--apply");
+  it("contains no Prisma write operation in either verifier stage", () => {
+    for (const script of [entryScript, verifierScript]) {
+      const source = fs.readFileSync(script, "utf8");
+      expect(source).not.toMatch(writeCall);
+      expect(source).not.toMatch(rawWrite);
+    }
+  });
+
+  it("exposes no apply mode", () => {
+    const coreSource = fs.readFileSync(verifierScript, "utf8");
+    expect(coreSource).not.toContain("--apply");
+  });
+
+  it("routes the package verification command through the ownership gate", () => {
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"),
+    );
+    expect(packageJson.scripts["db:tenant:verify"]).toBe(
+      "node scripts/verify-tenant-cutover-entry.mjs",
+    );
   });
 });
