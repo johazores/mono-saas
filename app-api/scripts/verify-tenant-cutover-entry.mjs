@@ -24,8 +24,36 @@ const LEGACY_SCOPED_DELEGATES = [
   ["BlockTemplate", "blockTemplate"],
 ];
 
-function hasHelpFlag(argv) {
-  return argv.includes("--help") || argv.includes("-h");
+const KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function validateArgs(argv) {
+  let tenantKey = "";
+  let help = false;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--help" || arg === "-h") {
+      help = true;
+      continue;
+    }
+    if (arg === "--tenant-key") {
+      const value = argv[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("Missing value for --tenant-key.");
+      }
+      tenantKey = value.trim().toLowerCase();
+      index += 1;
+      continue;
+    }
+    throw new Error(`Unexpected argument: ${arg}`);
+  }
+
+  if (help) return { help: true, tenantKey: "" };
+  if (!tenantKey) throw new Error("--tenant-key is required.");
+  if (!KEY_PATTERN.test(tenantKey)) {
+    throw new Error("--tenant-key must be lowercase alphanumeric with hyphens.");
+  }
+  return { help: false, tenantKey };
 }
 
 function normalizeHost(rawHost) {
@@ -117,7 +145,8 @@ async function verifyTenantOwnership() {
 }
 
 async function main() {
-  if (hasHelpFlag(process.argv.slice(2))) {
+  const args = validateArgs(process.argv.slice(2));
+  if (args.help) {
     await prisma.$disconnect();
     await import("./verify-tenant-cutover.mjs");
     return;
