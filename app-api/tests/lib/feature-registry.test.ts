@@ -11,6 +11,8 @@ vi.mock("@/repositories/feature-repository", () => ({
     delete: vi.fn(),
   },
 }));
+vi.mock("@/lib/env", () => ({ getAppEnv: vi.fn() }));
+vi.mock("@/lib/request-scope", () => ({ getTenantId: vi.fn() }));
 
 import {
   getAllFeatures,
@@ -19,9 +21,13 @@ import {
   isFeatureEnabled,
   getEnabledFeatures,
 } from "@/lib/feature-registry";
+import { getAppEnv } from "@/lib/env";
+import { getTenantId } from "@/lib/request-scope";
 import { featureRepository } from "@/repositories/feature-repository";
 
 const repo = vi.mocked(featureRepository);
+const env = vi.mocked(getAppEnv);
+const tenant = vi.mocked(getTenantId);
 
 const fakeRows = [
   { key: "storage.5gb", description: "5 GB storage", category: "storage" },
@@ -32,6 +38,8 @@ const fakeRows = [
 beforeEach(() => {
   vi.clearAllMocks();
   invalidateFeatureCache();
+  tenant.mockReturnValue(null);
+  env.mockResolvedValue("dev");
 });
 
 describe("getAllFeatures", () => {
@@ -60,6 +68,49 @@ describe("getAllFeatures", () => {
     await getAllFeatures();
 
     expect(repo.list).toHaveBeenCalledOnce();
+  });
+
+  it("isolates cached definitions by tenant", async () => {
+    tenant.mockReturnValue("tenant-a");
+    repo.list.mockResolvedValueOnce([
+      { key: "feature.a", description: "A", category: "tenant" },
+    ] as never);
+
+    const tenantA = await getAllFeatures();
+
+    tenant.mockReturnValue("tenant-b");
+    repo.list.mockResolvedValueOnce([
+      { key: "feature.b", description: "B", category: "tenant" },
+    ] as never);
+
+    const tenantB = await getAllFeatures();
+
+    tenant.mockReturnValue("tenant-a");
+    const tenantAAgain = await getAllFeatures();
+
+    expect(tenantA.map((item) => item.key)).toEqual(["feature.a"]);
+    expect(tenantB.map((item) => item.key)).toEqual(["feature.b"]);
+    expect(tenantAAgain.map((item) => item.key)).toEqual(["feature.a"]);
+    expect(repo.list).toHaveBeenCalledTimes(2);
+    expect(env).not.toHaveBeenCalled();
+  });
+
+  it("isolates deployment-only cache entries by environment", async () => {
+    env.mockResolvedValueOnce("dev").mockResolvedValueOnce("production");
+    repo.list
+      .mockResolvedValueOnce([
+        { key: "dev.feature", description: "Dev", category: "env" },
+      ] as never)
+      .mockResolvedValueOnce([
+        { key: "prod.feature", description: "Prod", category: "env" },
+      ] as never);
+
+    const dev = await getAllFeatures();
+    const production = await getAllFeatures();
+
+    expect(dev.map((item) => item.key)).toEqual(["dev.feature"]);
+    expect(production.map((item) => item.key)).toEqual(["prod.feature"]);
+    expect(repo.list).toHaveBeenCalledTimes(2);
   });
 
   it("refetches after cache is invalidated", async () => {

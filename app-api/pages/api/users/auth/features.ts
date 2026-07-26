@@ -1,2 +1,4 @@
 import { featureController } from "@/controllers/feature-controller";
-export default featureController;
+import { withRequestScope } from "@/lib/api-request-scope";
+
+export default withRequestScope(featureController);

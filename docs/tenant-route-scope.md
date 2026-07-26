@@ -38,6 +38,14 @@ The route establishes request scope before `requireUser()`, so verified tenant r
 
 Both routes establish request scope before member authentication. Purchase and purchase-file repositories add the verified tenant filter, so knowing another tenant's file or purchase ID is insufficient on a tenant-bound request.
 
+### Member features
+
+`GET /api/users/auth/features`
+
+The member feature route establishes request scope before `requireUser()`. Active Membership rows and active Feature definitions are tenant-qualified when authoritative context exists, so direct and transitional inherited feature access cannot consume another tenant's staged entitlement rows.
+
+The feature-definition cache is also scope-aware: verified tenants have separate cache entries, while deployment-only requests are keyed by the resolved application environment. Cache invalidation clears every scope entry so administrator feature changes do not leave stale tenant-specific definitions behind.
+
 ### Checkout
 
 `POST /api/checkout`

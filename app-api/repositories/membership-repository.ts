@@ -1,16 +1,22 @@
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/request-scope";
+
+function tenantWhere(): { tenantId?: string } {
+  const tenantId = getTenantId();
+  return tenantId ? { tenantId } : {};
+}
 
 export const membershipRepository = {
   findActiveByUserId(userId: string) {
     return prisma.membership.findMany({
-      where: { userId, status: "active" },
+      where: { ...tenantWhere(), userId, status: "active" },
       orderBy: { createdAt: "desc" },
     });
   },
 
   findByUserId(userId: string) {
     return prisma.membership.findMany({
-      where: { userId },
+      where: { ...tenantWhere(), userId },
       orderBy: { createdAt: "desc" },
     });
   },

@@ -1,27 +1,37 @@
+import { getAppEnv } from "@/lib/env";
+import { getTenantId } from "@/lib/request-scope";
 import { featureRepository } from "@/repositories/feature-repository";
 import type { FeatureDefinition } from "@/types";
 
-let cache: FeatureDefinition[] | null = null;
-let cacheExpiry = 0;
-const CACHE_TTL = 60_000; // 1 minute
+const CACHE_TTL = 60_000;
+const cache = new Map<
+  string,
+  { value: FeatureDefinition[]; expiresAt: number }
+>();
+
+async function featureCacheKey(): Promise<string> {
+  const tenantId = getTenantId();
+  return tenantId ? `tenant:${tenantId}` : `env:${await getAppEnv()}`;
+}
 
 export async function getAllFeatures(): Promise<FeatureDefinition[]> {
+  const key = await featureCacheKey();
   const now = Date.now();
-  if (cache && now < cacheExpiry) return cache;
+  const cached = cache.get(key);
+  if (cached && now < cached.expiresAt) return cached.value;
 
   const rows = await featureRepository.list();
-  cache = rows.map((r) => ({
+  const value = rows.map((r) => ({
     key: r.key,
     description: r.description,
     category: r.category,
   }));
-  cacheExpiry = now + CACHE_TTL;
-  return cache;
+  cache.set(key, { value, expiresAt: now + CACHE_TTL });
+  return value;
 }
 
 export function invalidateFeatureCache(): void {
-  cache = null;
-  cacheExpiry = 0;
+  cache.clear();
 }
 
 export async function getFeatureDefinition(
