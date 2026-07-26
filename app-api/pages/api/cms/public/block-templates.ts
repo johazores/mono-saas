@@ -1,2 +1,4 @@
 import { publicBlockTemplateController } from "@/controllers/block-template-controller";
-export default publicBlockTemplateController;
+import { withRequestScope } from "@/lib/api-request-scope";
+
+export default withRequestScope(publicBlockTemplateController);
