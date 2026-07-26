@@ -4,7 +4,7 @@
 
 **T-1301 · Tenant isolation test suite**
 - **Priority** P0 · **Status** Not started · **Complexity** L · **Depends on** T-303
-- **Notes:** Seed two tenants and assert every repository, relation include, and nested write refuses to cross the boundary. Treat a failure as a release blocker.
+- **Notes:** Seed at least two tenants in a real test database and assert every repository, relation include, nested write, soft-reference path, and concurrent request refuses to cross the tenant boundary. T-305 Stage C now provides a read-only data-integrity verifier for staged assignments, relations, workspace/identity migration, and final-index collisions, but that verifier does not exercise the runtime Prisma guard and does not replace this suite. A T-1301 failure is a release blocker and `tenantId` must not become the authoritative runtime scope before this passes.
 - **Acceptance:** The suite runs against a real test database and fails loudly on a deliberately introduced isolation leak.
 
 **T-1302 · Integration tests**
