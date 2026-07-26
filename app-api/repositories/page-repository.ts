@@ -1,5 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/request-scope";
 import type { Prisma } from "@prisma/client";
+
+function tenantWhere(): { tenantId?: string } {
+  const tenantId = getTenantId();
+  return tenantId ? { tenantId } : {};
+}
 
 export const pageRepository = {
   list() {
@@ -10,7 +16,7 @@ export const pageRepository = {
 
   listPublished() {
     return prisma.page.findMany({
-      where: { status: "published" },
+      where: { ...tenantWhere(), status: "published" },
       orderBy: { title: "asc" },
     });
   },
@@ -20,12 +26,12 @@ export const pageRepository = {
   },
 
   findBySlug(slug: string) {
-    return prisma.page.findFirst({ where: { slug } });
+    return prisma.page.findFirst({ where: { ...tenantWhere(), slug } });
   },
 
   findHomepage() {
     return prisma.page.findFirst({
-      where: { isHomepage: true, status: "published" },
+      where: { ...tenantWhere(), isHomepage: true, status: "published" },
     });
   },
 
