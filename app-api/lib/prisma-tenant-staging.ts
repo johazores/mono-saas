@@ -42,6 +42,11 @@ function stageUpdateData(model: string, value: unknown, tenantId: string): void 
   for (const item of asArray(value)) {
     if (!isRecord(item)) continue;
     const data = isRecord(item.data) ? item.data : item;
+
+    // Existing records are still selected/authorized by env during staging.
+    // Never allow an update payload to retag one to a caller-selected tenant.
+    if (TENANT_STAGED_MODELS.has(model)) delete data.tenantId;
+
     stageNestedCreates(model, data, tenantId);
   }
 }
@@ -105,9 +110,8 @@ function stageNestedCreates(
  * remains the database authorization scope. Stamp only newly created legacy
  * scoped rows so live writes do not reintroduce null tenant IDs.
  *
- * Existing records are never retagged here. Updates may stamp nested creates,
- * but a top-level update/upsert-update keeps its current tenantId until the
- * separately reviewed tenant-aware guard cutover.
+ * Existing records are never retagged here. Caller-supplied tenantId values on
+ * update paths are discarded; nested creates still receive the verified tenant.
  */
 export function applyTenantStagingCreates(
   operation: string,
