@@ -16,7 +16,7 @@
     "db:seed:admin": "tsx prisma/seed-admin.ts",
     "db:migrate:encrypt-secrets": "tsx prisma/encrypt-secret-settings.ts",
     "db:tenant:backfill": "node scripts/backfill-tenant-scope.mjs",
-    "db:tenant:verify": "node scripts/verify-tenant-cutover.mjs",
+    "db:tenant:verify": "node scripts/verify-tenant-cutover-entry.mjs",
     "setup": "pnpm install && pnpm run prisma:push && pnpm run db:seed"
   },
   "dependencies": {
