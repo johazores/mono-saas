@@ -1,7 +1,7 @@
 # Tenant Scope Backfill Runbook
 
-- **Status:** Stage B migration command implemented; runtime cutover remains blocked
-- **Last verified:** 2026-07-25
+- **Status:** Stage B migration command merged; runtime cutover remains blocked
+- **Last verified:** 2026-07-26
 - **Roadmap:** T-301, T-303, T-305, T-1301
 
 ## Purpose
@@ -44,7 +44,7 @@ Do not reuse a tenant key for a different customer/workspace.
 From `app-api`:
 
 ```bash
-node scripts/backfill-tenant-scope.mjs \
+pnpm run db:tenant:backfill -- \
   --source-env dev \
   --tenant-key default \
   --tenant-name "Default Tenant" \
@@ -85,7 +85,7 @@ Do not bypass a conflict by manually choosing a different `tenantId` on the fail
 After a clean dry-run, re-run the exact mapping with `--apply`:
 
 ```bash
-node scripts/backfill-tenant-scope.mjs \
+pnpm run db:tenant:backfill -- \
   --source-env dev \
   --tenant-key default \
   --tenant-name "Default Tenant" \
@@ -126,16 +126,28 @@ If the current database contains both legacy `dev` and `production` rows, migrat
 
 The final deployment architecture will separate development/staging/production databases. This backfill exists only to preserve current legacy data while that cutover is performed.
 
+## 6. Run the read-only Stage C verifier
+
+After every required dataset is backfilled, run:
+
+```bash
+pnpm run db:tenant:verify -- --tenant-key default
+```
+
+The verifier performs broader global integrity, tenant-consistency, workspace/identity, soft-reference, and final-index collision checks. See `docs/tenant-cutover-verification.md`.
+
+A clean result still does not switch the runtime to `tenantId`.
+
 ## What this command does not prove
 
 A successful backfill does **not** complete tenant isolation.
 
 Before `tenantId` becomes the runtime authorization scope:
 
-- all remaining soft references must be reviewed;
+- Stage C data verification must pass for the staged database;
 - tenant/domain/membership candidate resolution must bind to real database records;
-- the Prisma guard must switch from `env` to `tenantId`;
-- final tenant-based unique indexes must replace legacy env-based indexes;
+- the Prisma guard must switch from `env` to the accepted tenant boundary in a separately reviewed change;
+- final tenant-based unique indexes must replace legacy env-based indexes after collision checks;
 - T-1301 must run against a real database seeded with at least two tenants and deliberately prove cross-tenant reads/writes fail.
 
-Only after that verification can legacy `env`, `APP_ENV`, `User.clerkId`, and global-user hierarchy fields be removed.
+Only after those gates can legacy `env`, `APP_ENV`, `User.clerkId`, and global-user hierarchy fields be removed.
