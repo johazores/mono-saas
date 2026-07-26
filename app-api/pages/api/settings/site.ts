@@ -1,3 +1,4 @@
 import { publicSiteConfigController } from "@/controllers/setting-controller";
+import { withRequestScope } from "@/lib/api-request-scope";
 
-export default publicSiteConfigController;
+export default withRequestScope(publicSiteConfigController);

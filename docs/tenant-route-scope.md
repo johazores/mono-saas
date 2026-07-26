@@ -24,6 +24,18 @@ The existing T-301 member-auth routes are already wrapped and enforce active org
 
 The route establishes request scope. `productRepository.list()` adds `tenantId` only when a verified tenant exists, so a tenant storefront cannot list another tenant's staged products. Deployment-only requests preserve the legacy environment behavior.
 
+### Public runtime configuration
+
+`GET /api/settings/auth`
+
+`GET /api/settings/site`
+
+`GET /api/settings/payment`
+
+These public routes establish authoritative request scope before reading login provider configuration, site identity/theme, or public payment configuration. The tenant-aware `SiteSetting` repository therefore selects only the verified tenant's staged rows rather than falling back to deployment-wide settings.
+
+Runtime configuration caches are scope-aware as well. Auth, Clerk security, payment, storage, and site/theme caches use `tenant:<tenantId>` for verified tenant requests and `env:<APP_ENV>` for deployment-only callers. A cached value or in-flight load for tenant A is never reused for tenant B, while administrator invalidation still clears every cached scope for the affected configuration category.
+
 ### Member purchases
 
 `/api/users/auth/purchases`
@@ -140,13 +152,16 @@ This change scopes public reads only. Current CMS administrator CRUD routes are 
 
 ## Tenant-aware runtime settings
 
-Tenant-bound auth, Clerk security, payment, checkout, and other runtime configuration reads flow through `SiteSetting`.
+Tenant-bound auth, Clerk security, payment, checkout, storage, public site identity/theme, and other runtime configuration reads flow through `SiteSetting`.
 
 During the staged migration:
 
 - `getMany()` and `getAll()` include the verified `tenantId` when request scope has one;
 - `get(key)` queries `{tenantId,key}` directly when a tenant is verified and uses the legacy `env+key` unique selector only for deployment-only requests;
 - secret-class values are hydrated/decrypted only after a tenant-owned row has been selected;
+- auth, Clerk security, payment, storage, and site/theme TTL caches are keyed by verified tenant or deployment environment;
+- concurrent cache misses deduplicate only inside the same scope, never across tenants;
+- configuration invalidation clears every cached scope in the affected category;
 - requests without tenant context preserve the current deployment-level settings behavior used by platform administration;
 - tenant-bound `set()` is intentionally blocked until the final `SiteSetting(tenantId,key)` unique index replaces legacy `SiteSetting(env,key)`.
 

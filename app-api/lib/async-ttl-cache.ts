@@ -3,6 +3,11 @@ export type AsyncTtlCache<T> = {
   invalidate(): void;
 };
 
+export type AsyncKeyedTtlCache<K, T> = {
+  get(key: K): Promise<T>;
+  invalidate(key?: K): void;
+};
+
 /**
  * Small in-process cache for configuration reads.
  *
@@ -51,6 +56,43 @@ export function createAsyncTtlCache<T>(
       hasValue = false;
       expiresAt = 0;
       inflight = null;
+    },
+  };
+}
+
+/**
+ * Keyed wrapper around the single-entry cache. Each scope gets independent
+ * cached and in-flight state while invalidation can clear one scope or all.
+ */
+export function createAsyncKeyedTtlCache<K, T>(
+  loader: (key: K) => Promise<T>,
+  ttlMs: number,
+): AsyncKeyedTtlCache<K, T> {
+  const caches = new Map<K, AsyncTtlCache<T>>();
+
+  function getCache(key: K): AsyncTtlCache<T> {
+    const existing = caches.get(key);
+    if (existing) return existing;
+
+    const cache = createAsyncTtlCache(() => loader(key), ttlMs);
+    caches.set(key, cache);
+    return cache;
+  }
+
+  return {
+    get(key: K): Promise<T> {
+      return getCache(key).get();
+    },
+
+    invalidate(key?: K): void {
+      if (key !== undefined) {
+        caches.get(key)?.invalidate();
+        caches.delete(key);
+        return;
+      }
+
+      for (const cache of caches.values()) cache.invalidate();
+      caches.clear();
     },
   };
 }
