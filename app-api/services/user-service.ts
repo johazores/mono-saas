@@ -1,4 +1,9 @@
 import crypto from "crypto";
+import { getTenantId } from "@/lib/request-scope";
+import {
+  detachLegacySubUserTenantMembership,
+  syncLegacySubUserTenantMembership,
+} from "@/lib/tenant-membership";
 import { hashPassword, verifyPassword, DUMMY_HASH } from "@/lib/password";
 import { userRepository } from "@/repositories/user-repository";
 import { purchaseRepository } from "@/repositories/purchase-repository";
@@ -65,6 +70,12 @@ export const userService = {
 
   async getById(id: string) {
     const user = await userRepository.findById(id);
+    return enrichWithPlan(safeUser(user as Record<string, unknown>));
+  },
+
+  async getSubUser(parentId: string, id: string): Promise<UserRecord | null> {
+    const user = await userRepository.findLegacyTenantUserById(id);
+    if (!user || user.parentId !== parentId) return null;
     return enrichWithPlan(safeUser(user as Record<string, unknown>));
   },
 
@@ -216,7 +227,7 @@ export const userService = {
     parentId: string,
     input: CreateSubUserInput,
   ): Promise<CreateSubUserResult> {
-    const parent = await userRepository.findById(parentId);
+    const parent = await userRepository.findLegacyTenantUserById(parentId);
     if (!parent) throw new Error("Parent user not found.");
 
     // Sub-users can only create their own sub-users if they have an
@@ -249,7 +260,7 @@ export const userService = {
     }
 
     if (maxSubUsers > 0) {
-      // Count all descendants under the creator, not just direct children
+      // Count all descendants under the creator, not just direct children.
       const descendants = await userRepository.findDescendants(parentId);
       if (descendants.length >= maxSubUsers) {
         throw new Error(
@@ -265,12 +276,16 @@ export const userService = {
     }
 
     const ancestors = [...(parentRecord.ancestors || []), parentId];
+    const tenantId = getTenantId();
 
-    // Check if a user with this email already exists
+    // The User record is still env-unique during migration. Never attach an
+    // existing row staged to another tenant to the deprecated parent hierarchy.
     const existing = await userRepository.findByEmailWithPassword(email);
 
     if (existing) {
-      // Link existing user — must not already be a sub-user
+      if (tenantId && existing.tenantId !== tenantId) {
+        throw new Error("This user is not available in this workspace.");
+      }
       if (existing.parentId) {
         throw new Error("This user is already a sub-user of another account.");
       }
@@ -280,13 +295,25 @@ export const userService = {
         ancestors,
       });
 
+      try {
+        await syncLegacySubUserTenantMembership(parentId, existing.id);
+      } catch (error) {
+        await userRepository
+          .update(existing.id, {
+            parent: { disconnect: true },
+            ancestors: { set: [] },
+          })
+          .catch(() => undefined);
+        throw error;
+      }
+
       const safe = safeUser(updated)!;
       const enriched = await enrichWithPlan(safe);
       return { user: enriched!, linked: true, generatedPassword: null };
     }
 
-    // Create new user with auto-generated password
-    // Append Aa1 to guarantee the password passes strength validation
+    // Create new user with auto-generated password.
+    // Append Aa1 to guarantee the password passes strength validation.
     const generatedPassword =
       crypto.randomBytes(12).toString("base64url") + "Aa1";
     const derivedName = email.split("@")[0];
@@ -298,6 +325,13 @@ export const userService = {
       parent: { connect: { id: parentId } },
       ancestors,
     });
+
+    try {
+      await syncLegacySubUserTenantMembership(parentId, user.id);
+    } catch (error) {
+      await userRepository.delete(user.id).catch(() => undefined);
+      throw error;
+    }
 
     const safe = safeUser(user);
     if (!safe) throw new Error("Failed to create sub-user.");
@@ -318,7 +352,7 @@ export const userService = {
     parentId: string,
     subUserId: string,
   ): Promise<UserRecord | null> {
-    const subUser = await userRepository.findById(subUserId);
+    const subUser = await userRepository.findLegacyTenantUserById(subUserId);
     if (!subUser) throw new Error("Sub-user not found.");
 
     const record = subUser as UserRecord;
@@ -326,7 +360,7 @@ export const userService = {
       throw new Error("This user is not your sub-user.");
     }
 
-    // Check if sub-user has children — prevent orphaning
+    // Check if sub-user has children — prevent orphaning.
     const childCount = await userRepository.countChildren(subUserId);
     if (childCount > 0) {
       throw new Error(
@@ -334,13 +368,23 @@ export const userService = {
       );
     }
 
-    // Detach from parent — the user keeps their account and any independent
-    // purchases but loses inherited features from the parent since plan/features
-    // are resolved dynamically from the parent's subscription.
     const updated = await userRepository.update(subUserId, {
       parent: { disconnect: true },
       ancestors: { set: [] },
     });
+
+    try {
+      await detachLegacySubUserTenantMembership(subUserId);
+    } catch (error) {
+      await userRepository
+        .update(subUserId, {
+          parent: { connect: { id: parentId } },
+          ancestors: { set: record.ancestors },
+        })
+        .catch(() => undefined);
+      throw error;
+    }
+
     return safeUser(updated);
   },
 };
