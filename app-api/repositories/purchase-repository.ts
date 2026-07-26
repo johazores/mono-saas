@@ -125,4 +125,10 @@ export const purchaseRepository = {
       orderBy: { createdAt: "desc" },
     });
   },
+
+  deleteByUserId(userId: string) {
+    return prisma.purchase.deleteMany({
+      where: { ...tenantWhere(), userId },
+    });
+  },
 };
