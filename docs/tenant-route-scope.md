@@ -64,6 +64,22 @@ Sub-user create/link/revoke also dual-write the replacement `OrganizationMembers
 
 This dual-write is migration-only. `OrganizationMembership` remains the final workspace hierarchy and the legacy User hierarchy is still scheduled for removal after cutover verification.
 
+### Member billing
+
+`GET|POST|PUT /api/users/auth/billing`
+
+The billing route establishes request scope before `requireUser()`, so tenant-bound billing status, portal creation, and provider-to-local purchase synchronization require active organization membership.
+
+The local billing dependencies already use the same authoritative tenant context:
+
+- payment/provider settings are read from tenant-owned `SiteSetting` rows;
+- local product matching uses tenant-qualified products;
+- local purchase lookup/create/update uses tenant-qualified purchase repositories;
+- the five-minute in-process billing sync throttle is keyed by both tenant and global user ID, so a sync in tenant A cannot suppress a later sync for the same user in tenant B;
+- deployment-only/background sync uses application environment plus user ID as its cache key.
+
+`User.stripeCustomerId` remains a transitional T-702 provider-specific field. This route hardening does not declare that field the final multi-workspace billing model; provider/customer references still need their planned provider-neutral migration before one global User can safely carry independent billing relationships across multiple tenants.
+
 ### Checkout
 
 `POST /api/checkout`
