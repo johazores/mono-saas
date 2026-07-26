@@ -9,7 +9,7 @@
 
 **T-302 · Derive scoped models from DMMF**
 - **Priority** P0 · **Status** Done · **Complexity** M · **Depends on** T-301
-- **Notes:** The current environment guard derives every model carrying `env` from `Prisma.dmmf`. This automatically includes `UserInvitation`, which the previous hand-maintained set omitted. The same mechanism will switch to the accepted tenant key during T-305.
+- **Notes:** The current environment guard now derives every model carrying `env` from `Prisma.dmmf`. This automatically includes `UserInvitation`, which the previous hand-maintained set omitted. The same mechanism will switch to the accepted tenant key during T-305.
 - **Acceptance:** Adding a scoped model requires no edit to `lib/prisma.ts`; tests assert the derived set matches the current schema.
 
 **T-303 · Close nested-relation scope leak**
@@ -19,7 +19,7 @@
 
 **T-304 · Remove the caller-override path**
 - **Priority** P0 · **Status** Done · **Complexity** S · **Depends on** T-302
-- **Notes:** Active scope unconditionally overwrites top-level and explicitly supplied nested `env` values, including compound unique selectors. Create, create-many, update, update-many, and both upsert branches cannot move records to a caller-selected environment.
+- **Notes:** Active scope now unconditionally overwrites top-level and explicitly supplied nested `env` values, including compound unique selectors. Create, create-many, update, update-many, and both upsert branches cannot move records to a caller-selected environment.
 - **Acceptance:** Caller-supplied scope is ignored, not honoured; tests cover top-level, compound, relation-filter, create, update, create-many, and upsert paths.
 
 **T-305 · Schema migration**
@@ -48,7 +48,7 @@
 
 **T-403 · Admin auth behind the same interface**
 - **Priority** P2 · **Status** Done · **Complexity** M · **Depends on** T-401
-- **Notes:** Administrator credentials use `adminCredentialsAuthProvider`, which implements the same `AuthProviderInterface` as member providers. A separate administrator registry preserves the platform-admin context. Provider verification proves the session identity only; active-account state and role authorization remain in `admin-auth.ts`. Expired and disabled presented sessions are revoked, and the existing seven-day session lifetime is unchanged.
+- **Notes:** Administrator credentials now use `adminCredentialsAuthProvider`, which implements the same `AuthProviderInterface` as member providers. A separate administrator registry preserves the platform-admin context. Provider verification proves the session identity only; active-account state and role authorization remain in `admin-auth.ts`. Expired and disabled presented sessions are revoked, and the existing seven-day session lifetime is unchanged.
 - **Acceptance:** Administrator and member verification share the provider boundary; administrator behavior remains unchanged.
 
 ---
