@@ -9,7 +9,7 @@
 
 **T-602 · Invitation flow**
 - **Priority** P1 · **Status** Not started · **Complexity** M · **Depends on** T-601
-- **Notes:** Extend the existing `UserInvitation` token, expiry, and status lifecycle with tenant, organization, optional team, and role targets.
+- **Notes:** Extend the existing `UserInvitation` token, expiry, and status lifecycle with tenant, organization, optional team, and role targets. The current migration guard now wraps credential invitation acceptance, requires a verified tenant request to match the staged `UserInvitation.tenantId`, and provisions the current tenant workspace through the same rollback-safe registration path as open signup. This does not complete T-602: platform-admin invitation creation still has no explicit organization/team/role target, so tenant-bound acceptance intentionally refuses unstaged invitations rather than deriving ownership from `env` or host.
 - **Acceptance:** Invite to a specific organization and role; expiry, revocation, and acceptance are tested.
 
 **T-603 · Workspace switcher UI**
