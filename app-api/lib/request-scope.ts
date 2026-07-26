@@ -4,6 +4,7 @@ export type RequestScopeSource =
   | "deployment"
   | "membership"
   | "host"
+  | "path"
   | "trusted-header"
   | "platform-admin";
 
