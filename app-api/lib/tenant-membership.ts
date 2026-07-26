@@ -47,6 +47,7 @@ export async function hasActiveCurrentTenantMembership(
       status: "active",
     },
     select: {
+      user: { select: { tenantId: true } },
       organization: {
         select: { tenantId: true, status: true },
       },
@@ -54,7 +55,8 @@ export async function hasActiveCurrentTenantMembership(
   });
 
   return (
-    membership?.organization.tenantId === tenantId &&
+    membership?.user.tenantId === tenantId &&
+    membership.organization.tenantId === tenantId &&
     membership.organization.status === "active"
   );
 }
@@ -71,6 +73,14 @@ export async function provisionNewUserTenantMembership(
   workspace: TenantWorkspace | null,
 ): Promise<void> {
   if (!workspace) return;
+
+  const user = await basePrisma.user.findUnique({
+    where: { id: userId },
+    select: { tenantId: true },
+  });
+  if (!user || user.tenantId !== workspace.tenantId) {
+    throw new TenantWorkspaceError();
+  }
 
   try {
     await basePrisma.organizationMembership.create({
