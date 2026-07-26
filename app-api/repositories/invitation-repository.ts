@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getAppEnv } from "@/lib/env";
+import { getTenantId } from "@/lib/request-scope";
 import type { InvitationStatus } from "@/types";
 
 export const invitationRepository = {
@@ -23,9 +24,10 @@ export const invitationRepository = {
   },
 
   findByTokenHash(tokenHash: string) {
-    return prisma.userInvitation.findUnique({
-      where: { tokenHash },
-    });
+    const tenantId = getTenantId();
+    return tenantId
+      ? prisma.userInvitation.findFirst({ where: { tokenHash, tenantId } })
+      : prisma.userInvitation.findUnique({ where: { tokenHash } });
   },
 
   async findPendingByEmail(email: string) {
@@ -50,10 +52,16 @@ export const invitationRepository = {
   },
 
   updateStatus(id: string, status: InvitationStatus) {
-    return prisma.userInvitation.update({
-      where: { id },
-      data: { status },
-    });
+    const tenantId = getTenantId();
+    return tenantId
+      ? prisma.userInvitation.updateMany({
+          where: { id, tenantId },
+          data: { status },
+        })
+      : prisma.userInvitation.update({
+          where: { id },
+          data: { status },
+        });
   },
 
   delete(id: string) {

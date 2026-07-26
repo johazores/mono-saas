@@ -7,6 +7,7 @@ const scopedRoutes = [
   "pages/api/settings/auth.ts",
   "pages/api/settings/site.ts",
   "pages/api/settings/payment.ts",
+  "pages/api/users/invitations/accept.ts",
   "pages/api/users/auth/profile.ts",
   "pages/api/users/auth/purchases.ts",
   "pages/api/users/auth/downloads.ts",

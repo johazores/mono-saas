@@ -2,11 +2,14 @@ import crypto from "crypto";
 import { getTenantId } from "@/lib/request-scope";
 import {
   detachLegacySubUserTenantMembership,
+  provisionNewUserTenantMembership,
+  resolveCurrentTenantWorkspace,
   syncLegacySubUserTenantMembership,
 } from "@/lib/tenant-membership";
 import { hashPassword, verifyPassword, DUMMY_HASH } from "@/lib/password";
 import { userRepository } from "@/repositories/user-repository";
 import { purchaseRepository } from "@/repositories/purchase-repository";
+import { membershipRepository } from "@/repositories/membership-repository";
 import { productRepository } from "@/repositories/product-repository";
 import type {
   UserRecord,
@@ -38,6 +41,21 @@ async function findLegacyHierarchyUser(id: string) {
   return getTenantId()
     ? userRepository.findLegacyTenantUserById(id)
     : userRepository.findById(id);
+}
+
+async function rollbackRegistration(userId: string): Promise<void> {
+  await membershipRepository.deleteByUserId(userId);
+  await purchaseRepository.deleteByUserId(userId);
+  await userRepository.delete(userId);
+}
+
+async function rollbackOrThrow(userId: string, error: unknown): Promise<never> {
+  try {
+    await rollbackRegistration(userId);
+  } catch {
+    throw new Error("Registration failed and cleanup could not complete.");
+  }
+  throw error;
 }
 
 async function enrichWithPlan(
@@ -126,30 +144,49 @@ export const userService = {
     const safe = safeUser(user);
     if (!safe) return null;
 
-    // Assign free product subscription
-    const freeProduct = await productRepository.findBySlug("free");
-    if (freeProduct) {
-      const purchase = await purchaseRepository.create({
-        user: { connect: { id: safe.id } },
-        product: { connect: { id: freeProduct.id } },
-        amount: 0,
-        currency: freeProduct.currency,
-        status: "active",
-      });
+    try {
+      // Assign free product subscription
+      const freeProduct = await productRepository.findBySlug("free");
+      if (freeProduct) {
+        const purchase = await purchaseRepository.create({
+          user: { connect: { id: safe.id } },
+          product: { connect: { id: freeProduct.id } },
+          amount: 0,
+          currency: freeProduct.currency,
+          status: "active",
+        });
 
-      // Grant membership from free product features
-      if (freeProduct.accessKeys.length > 0) {
-        const { membershipService } =
-          await import("@/services/membership-service");
-        await membershipService.grantFromPurchase(
-          safe.id,
-          purchase.id,
-          freeProduct.accessKeys,
-        );
+        // Grant membership from free product features
+        if (freeProduct.accessKeys.length > 0) {
+          const { membershipService } =
+            await import("@/services/membership-service");
+          await membershipService.grantFromPurchase(
+            safe.id,
+            purchase.id,
+            freeProduct.accessKeys,
+          );
+        }
       }
-    }
 
-    return enrichWithPlan(safe);
+      return enrichWithPlan(safe);
+    } catch (error) {
+      return rollbackOrThrow(safe.id, error);
+    }
+  },
+
+  async registerForCurrentWorkspace(
+    input: CreateUserInput,
+  ): Promise<UserRecord | null> {
+    const workspace = await resolveCurrentTenantWorkspace();
+    const user = await this.register(input);
+    if (!user) return null;
+
+    try {
+      await provisionNewUserTenantMembership(user.id, workspace);
+      return user;
+    } catch (error) {
+      return rollbackOrThrow(user.id, error);
+    }
   },
 
   async update(id: string, input: UpdateUserInput): Promise<UserRecord | null> {

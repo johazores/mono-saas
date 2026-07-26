@@ -7,6 +7,7 @@ vi.mock("@/lib/prisma", () => ({
       create: vi.fn(),
       updateMany: vi.fn(),
       update: vi.fn(),
+      deleteMany: vi.fn(),
     },
     feature: {
       findMany: vi.fn(),
@@ -47,6 +48,22 @@ describe("member entitlement tenant reads", () => {
     expect(memberships.findMany).toHaveBeenCalledWith({
       where: { tenantId: "tenant-1", userId: "user-1", status: "active" },
       orderBy: { createdAt: "desc" },
+    });
+  });
+
+  it("qualifies membership source revocation by tenant", async () => {
+    tenant.mockReturnValue("tenant-1");
+    memberships.updateMany.mockResolvedValue({ count: 1 });
+
+    await membershipRepository.revokeBySourceId("purchase-1");
+
+    expect(memberships.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: "tenant-1",
+        sourceId: "purchase-1",
+        status: "active",
+      },
+      data: { status: "revoked" },
     });
   });
 

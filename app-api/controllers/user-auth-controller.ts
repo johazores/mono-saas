@@ -5,11 +5,7 @@ import {
   clearUserSession,
   getUserSession,
 } from "@/lib/user-auth";
-import {
-  hasActiveCurrentTenantMembership,
-  provisionNewUserTenantMembership,
-  resolveCurrentTenantWorkspace,
-} from "@/lib/tenant-membership";
+import { hasActiveCurrentTenantMembership } from "@/lib/tenant-membership";
 import { userService } from "@/services/user-service";
 import { billingService } from "@/services/billing-service";
 import { settingService } from "@/services/setting-service";
@@ -119,13 +115,11 @@ export async function userRegisterController(
   if (!input) return;
 
   try {
-    const workspace = await resolveCurrentTenantWorkspace();
-    const user = await userService.register(input);
+    const user = await userService.registerForCurrentWorkspace(input);
     if (!user) {
       sendError(res, "Registration failed.", 400);
       return;
     }
-    await provisionNewUserTenantMembership(user.id, workspace);
     await createUserSession(user.id, res);
     await logActivity(req, "user.register", {
       actor: "user",
