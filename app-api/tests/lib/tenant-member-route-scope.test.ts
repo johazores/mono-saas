@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const scopedRoutes = [
   "pages/api/products/public.ts",
+  "pages/api/users/auth/profile.ts",
   "pages/api/users/auth/purchases.ts",
   "pages/api/users/auth/downloads.ts",
   "pages/api/users/auth/downloads/[fileId].ts",
