@@ -118,6 +118,17 @@ export const purchaseRepository = {
     });
   },
 
+  findByExternalIdForUserProduct(
+    userId: string,
+    productId: string,
+    externalId: string,
+  ) {
+    return prisma.purchase.findFirst({
+      where: { ...tenantWhere(), userId, productId, externalId },
+      include: { product: { select: productSelect } },
+    });
+  },
+
   listAll() {
     return prisma.purchase.findMany({
       where: tenantWhere(),
