@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/request-scope";
 import type { Prisma } from "@prisma/client";
 
 export const mediaRepository = {
@@ -7,7 +8,10 @@ export const mediaRepository = {
   },
 
   findById(id: string) {
-    return prisma.media.findUnique({ where: { id } });
+    const tenantId = getTenantId();
+    return tenantId
+      ? prisma.media.findFirst({ where: { id, tenantId } })
+      : prisma.media.findUnique({ where: { id } });
   },
 
   create(data: Prisma.MediaCreateInput) {
