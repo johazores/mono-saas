@@ -25,18 +25,24 @@ vi.mock("@/lib/payment", () => ({
   getPaymentProvider: vi.fn(),
   getPaymentConfig: vi.fn(),
 }));
+vi.mock("@/lib/env", () => ({ getAppEnv: vi.fn() }));
+vi.mock("@/lib/request-scope", () => ({ getTenantId: vi.fn() }));
 
 import { billingService } from "@/services/billing-service";
 import { userRepository } from "@/repositories/user-repository";
 import { purchaseRepository } from "@/repositories/purchase-repository";
 import { productRepository } from "@/repositories/product-repository";
 import { getPaymentProvider, getPaymentConfig } from "@/lib/payment";
+import { getAppEnv } from "@/lib/env";
+import { getTenantId } from "@/lib/request-scope";
 
 const userRepo = vi.mocked(userRepository);
 const purchaseRepo = vi.mocked(purchaseRepository);
 const productRepo = vi.mocked(productRepository);
 const mockGetProvider = vi.mocked(getPaymentProvider);
 const mockGetConfig = vi.mocked(getPaymentConfig);
+const mockGetEnv = vi.mocked(getAppEnv);
+const mockGetTenantId = vi.mocked(getTenantId);
 
 const mockProvider = {
   findOrCreateCustomer: vi.fn(),
@@ -75,6 +81,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetProvider.mockReturnValue(mockProvider);
   mockGetConfig.mockResolvedValue(testConfig);
+  mockGetTenantId.mockReturnValue(null);
+  mockGetEnv.mockResolvedValue("dev");
 });
 
 describe("billingService.ensureStripeCustomer", () => {
@@ -318,6 +326,47 @@ describe("billingService.syncPurchases", () => {
         }),
       }),
     );
+  });
+
+  it("isolates the sync throttle for the same global user across tenants", async () => {
+    const userId = "scope-user";
+    userRepo.findById.mockResolvedValue({
+      id: userId,
+      stripeCustomerId: "cus_scope",
+    } as never);
+    mockProvider.getCustomerSubscriptions.mockResolvedValue([]);
+    mockProvider.getCustomerInvoices.mockResolvedValue([]);
+    productRepo.listAll.mockResolvedValue([] as never);
+
+    mockGetTenantId.mockReturnValue("tenant-a");
+    await billingService.syncPurchases(userId);
+    await billingService.syncPurchases(userId);
+    expect(mockProvider.getCustomerSubscriptions).toHaveBeenCalledTimes(1);
+
+    mockGetTenantId.mockReturnValue("tenant-b");
+    await billingService.syncPurchases(userId);
+    expect(mockProvider.getCustomerSubscriptions).toHaveBeenCalledTimes(2);
+    expect(mockGetEnv).not.toHaveBeenCalled();
+  });
+
+  it("isolates deployment-only throttle entries by application environment", async () => {
+    const userId = "env-scope-user";
+    userRepo.findById.mockResolvedValue({
+      id: userId,
+      stripeCustomerId: "cus_env_scope",
+    } as never);
+    mockProvider.getCustomerSubscriptions.mockResolvedValue([]);
+    mockProvider.getCustomerInvoices.mockResolvedValue([]);
+    productRepo.listAll.mockResolvedValue([] as never);
+
+    mockGetEnv.mockResolvedValue("dev");
+    await billingService.syncPurchases(userId);
+    await billingService.syncPurchases(userId);
+    expect(mockProvider.getCustomerSubscriptions).toHaveBeenCalledTimes(1);
+
+    mockGetEnv.mockResolvedValue("production");
+    await billingService.syncPurchases(userId);
+    expect(mockProvider.getCustomerSubscriptions).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -10,6 +10,7 @@ const scopedRoutes = [
   "pages/api/users/auth/features.ts",
   "pages/api/users/auth/sub-users/index.ts",
   "pages/api/users/auth/sub-users/[id].ts",
+  "pages/api/users/auth/billing.ts",
   "pages/api/checkout/index.ts",
   "pages/api/checkout/verify.ts",
   "pages/api/cms/media/[id]/file.ts",

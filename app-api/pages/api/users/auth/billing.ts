@@ -1,2 +1,4 @@
 import { billingController } from "@/controllers/billing-controller";
-export default billingController;
+import { withRequestScope } from "@/lib/api-request-scope";
+
+export default withRequestScope(billingController);

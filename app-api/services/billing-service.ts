@@ -1,3 +1,5 @@
+import { getAppEnv } from "@/lib/env";
+import { getTenantId } from "@/lib/request-scope";
 import { userRepository } from "@/repositories/user-repository";
 import { purchaseRepository } from "@/repositories/purchase-repository";
 import { productRepository } from "@/repositories/product-repository";
@@ -7,6 +9,13 @@ import type { BillingStatus, ProviderInvoice } from "@/types";
 const SYNC_THROTTLE_MS = 5 * 60 * 1000;
 const lastSyncMap = new Map<string, number>();
 
+async function billingSyncKey(userId: string): Promise<string> {
+  const tenantId = getTenantId();
+  return tenantId
+    ? `tenant:${tenantId}:user:${userId}`
+    : `env:${await getAppEnv()}:user:${userId}`;
+}
+
 export const billingService = {
   syncInBackground(userId: string): void {
     billingService.syncPurchases(userId).catch(() => {
@@ -15,7 +24,7 @@ export const billingService = {
   },
 
   async forceSyncPurchases(userId: string): Promise<{ synced: number }> {
-    lastSyncMap.delete(userId);
+    lastSyncMap.delete(await billingSyncKey(userId));
     return billingService.syncPurchases(userId);
   },
 
@@ -72,7 +81,7 @@ export const billingService = {
       provider.getCustomerSubscriptions(user.stripeCustomerId, config),
       provider.getCustomerInvoices(user.stripeCustomerId, config),
     ]);
-    const lastSync = lastSyncMap.get(userId);
+    const lastSync = lastSyncMap.get(await billingSyncKey(userId));
 
     return {
       hasStripeCustomer: true,
@@ -84,7 +93,8 @@ export const billingService = {
   },
 
   async syncPurchases(userId: string): Promise<{ synced: number }> {
-    const lastSync = lastSyncMap.get(userId);
+    const syncKey = await billingSyncKey(userId);
+    const lastSync = lastSyncMap.get(syncKey);
     if (lastSync && Date.now() - lastSync < SYNC_THROTTLE_MS) {
       return { synced: 0 };
     }
@@ -181,7 +191,7 @@ export const billingService = {
       synced += 1;
     }
 
-    lastSyncMap.set(userId, Date.now());
+    lastSyncMap.set(syncKey, Date.now());
     return { synced };
   },
 };
