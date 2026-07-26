@@ -3,22 +3,30 @@ import { getAppEnv } from "@/lib/env";
 import { getTenantId } from "@/lib/request-scope";
 import type { Prisma } from "@prisma/client";
 
+function tenantWhere(): { tenantId?: string } {
+  return getTenantId() ? { tenantId: getTenantId()! } : {};
+}
+
 export const productRepository = {
   list() {
     return prisma.product.findMany({
-      where: { isActive: true },
+      where: { ...tenantWhere(), isActive: true },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
     });
   },
 
   listAll() {
     return prisma.product.findMany({
+      where: tenantWhere(),
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
     });
   },
 
   findById(id: string) {
-    return prisma.product.findUnique({ where: { id } });
+    const tenantId = getTenantId();
+    return tenantId
+      ? prisma.product.findFirst({ where: { id, tenantId } })
+      : prisma.product.findUnique({ where: { id } });
   },
 
   async findBySlug(slug: string) {
@@ -27,9 +35,8 @@ export const productRepository = {
     });
     const tenantId = getTenantId();
 
-    // During the staged migration the legacy env+slug unique still controls the
-    // query. Never use a product owned by another verified tenant merely because
-    // it shares the deployment environment.
+    // The legacy env+slug unique remains during migration, so reject a row that
+    // belongs to another verified tenant even when the environment matches.
     if (tenantId && product?.tenantId !== tenantId) return null;
     return product;
   },
@@ -44,7 +51,11 @@ export const productRepository = {
 
   countActivePurchases(productId: string) {
     return prisma.purchase.count({
-      where: { productId, status: { in: ["active", "completed"] } },
+      where: {
+        ...tenantWhere(),
+        productId,
+        status: { in: ["active", "completed"] },
+      },
     });
   },
 };
