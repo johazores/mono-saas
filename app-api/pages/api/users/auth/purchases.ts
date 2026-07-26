@@ -1,2 +1,4 @@
 import { purchaseCollectionController } from "@/controllers/purchase-controller";
-export default purchaseCollectionController;
+import { withRequestScope } from "@/lib/api-request-scope";
+
+export default withRequestScope(purchaseCollectionController);

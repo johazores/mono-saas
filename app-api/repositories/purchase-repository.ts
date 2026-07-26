@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/request-scope";
 import type { Prisma } from "@prisma/client";
 
 const productSelect = {
@@ -11,25 +12,41 @@ const productSelect = {
   maxSubUsers: true,
 } as const;
 
+function tenantWhere(): { tenantId?: string } {
+  const tenantId = getTenantId();
+  return tenantId ? { tenantId } : {};
+}
+
 export const purchaseRepository = {
   findByUserId(userId: string) {
     return prisma.purchase.findMany({
-      where: { userId },
+      where: { ...tenantWhere(), userId },
       include: { product: { select: productSelect } },
       orderBy: { createdAt: "desc" },
     });
   },
 
   findById(id: string) {
-    return prisma.purchase.findUnique({
-      where: { id },
-      include: { product: { select: productSelect } },
-    });
+    const tenantId = getTenantId();
+    return tenantId
+      ? prisma.purchase.findFirst({
+          where: { id, tenantId },
+          include: { product: { select: productSelect } },
+        })
+      : prisma.purchase.findUnique({
+          where: { id },
+          include: { product: { select: productSelect } },
+        });
   },
 
   checkOwnership(userId: string, productId: string) {
     return prisma.purchase.findFirst({
-      where: { userId, productId, status: { in: ["completed", "active"] } },
+      where: {
+        ...tenantWhere(),
+        userId,
+        productId,
+        status: { in: ["completed", "active"] },
+      },
     });
   },
 
@@ -37,6 +54,7 @@ export const purchaseRepository = {
   findActiveSubscription(userId: string) {
     return prisma.purchase.findFirst({
       where: {
+        ...tenantWhere(),
         userId,
         status: "active",
         product: { paymentModel: "recurring" },
@@ -50,6 +68,7 @@ export const purchaseRepository = {
   cancelActiveSubscriptions(userId: string) {
     return prisma.purchase.updateMany({
       where: {
+        ...tenantWhere(),
         userId,
         status: "active",
         product: { paymentModel: "recurring" },
@@ -62,6 +81,7 @@ export const purchaseRepository = {
   findExpiredSubscriptions() {
     return prisma.purchase.findMany({
       where: {
+        ...tenantWhere(),
         status: "active",
         endDate: { lte: new Date() },
         product: { paymentModel: "recurring" },
@@ -71,7 +91,7 @@ export const purchaseRepository = {
 
   expireBatch(ids: string[]) {
     return prisma.purchase.updateMany({
-      where: { id: { in: ids } },
+      where: { ...tenantWhere(), id: { in: ids } },
       data: { status: "expired" },
     });
   },
@@ -93,13 +113,14 @@ export const purchaseRepository = {
 
   findByExternalId(externalId: string) {
     return prisma.purchase.findFirst({
-      where: { externalId },
+      where: { ...tenantWhere(), externalId },
       include: { product: { select: productSelect } },
     });
   },
 
   listAll() {
     return prisma.purchase.findMany({
+      where: tenantWhere(),
       include: { product: { select: productSelect } },
       orderBy: { createdAt: "desc" },
     });

@@ -1,2 +1,4 @@
 import { purchaseFileDownloadController } from "@/controllers/purchase-file-controller";
-export default purchaseFileDownloadController;
+import { withRequestScope } from "@/lib/api-request-scope";
+
+export default withRequestScope(purchaseFileDownloadController);

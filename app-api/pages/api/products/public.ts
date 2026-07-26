@@ -1,2 +1,4 @@
 import { publicProductController } from "@/controllers/purchase-controller";
-export default publicProductController;
+import { withRequestScope } from "@/lib/api-request-scope";
+
+export default withRequestScope(publicProductController);
