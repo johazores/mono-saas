@@ -1,5 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { getTenantId } from "@/lib/request-scope";
 import type { Prisma } from "@prisma/client";
+
+function tenantWhere(): { tenantId?: string } {
+  const tenantId = getTenantId();
+  return tenantId ? { tenantId } : {};
+}
 
 export const blockTemplateRepository = {
   list() {
@@ -8,7 +14,7 @@ export const blockTemplateRepository = {
 
   listActive() {
     return prisma.blockTemplate.findMany({
-      where: { status: "active" },
+      where: { ...tenantWhere(), status: "active" },
       orderBy: { sortOrder: "asc" },
     });
   },
@@ -18,7 +24,9 @@ export const blockTemplateRepository = {
   },
 
   findBySlug(slug: string) {
-    return prisma.blockTemplate.findFirst({ where: { slug } });
+    return prisma.blockTemplate.findFirst({
+      where: { ...tenantWhere(), slug },
+    });
   },
 
   create(data: Prisma.BlockTemplateCreateInput) {
