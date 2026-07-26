@@ -23,7 +23,7 @@ vi.mock("@/services/setting-service", () => ({
 
 vi.mock("@/services/user-service", () => ({
   userService: {
-    register: vi.fn(),
+    registerForCurrentWorkspace: vi.fn(),
   },
 }));
 
@@ -106,7 +106,7 @@ describe("invitationService.create", () => {
 });
 
 describe("invitationService.accept", () => {
-  it("accepts a valid pending invitation", async () => {
+  it("accepts a valid pending invitation through workspace registration", async () => {
     repo.findByTokenHash.mockResolvedValue({
       id: "inv-1",
       env: "dev",
@@ -119,11 +119,11 @@ describe("invitationService.accept", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    userSvc.register.mockResolvedValue({
+    userSvc.registerForCurrentWorkspace.mockResolvedValue({
       id: "user-1",
       email: "invited@test.com",
       name: "Invited",
-    } as any);
+    } as never);
 
     const result = await invitationService.accept({
       token: "raw-token",
@@ -135,7 +135,7 @@ describe("invitationService.accept", () => {
       expect.objectContaining({ email: "invited@test.com" }),
     );
     expect(repo.updateStatus).toHaveBeenCalledWith("inv-1", "accepted");
-    expect(userSvc.register).toHaveBeenCalledWith({
+    expect(userSvc.registerForCurrentWorkspace).toHaveBeenCalledWith({
       name: "Invited",
       email: "invited@test.com",
       password: "StrongPass1",
@@ -189,7 +189,7 @@ describe("invitationService.accept", () => {
       name: null,
       tokenHash: "hash",
       status: "pending",
-      expiresAt: new Date(Date.now() - 1000), // in the past
+      expiresAt: new Date(Date.now() - 1000),
       invitedBy: "admin-1",
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -214,14 +214,14 @@ describe("invitationService.accept", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    userSvc.register.mockResolvedValue({ id: "user-1" } as any);
+    userSvc.registerForCurrentWorkspace.mockResolvedValue({ id: "user-1" } as never);
 
     await invitationService.accept({
       token: "raw-token",
       password: "LongPass1",
     });
 
-    expect(userSvc.register).toHaveBeenCalledWith(
+    expect(userSvc.registerForCurrentWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({ name: "noname" }),
     );
   });
@@ -239,7 +239,7 @@ describe("invitationService.accept", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    userSvc.register.mockResolvedValue(null as any);
+    userSvc.registerForCurrentWorkspace.mockResolvedValue(null as never);
 
     await expect(
       invitationService.accept({ token: "raw-token", password: "LongPass1" }),
