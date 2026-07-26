@@ -42,6 +42,14 @@ function response() {
   return { res, setHeader, status, json };
 }
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetAppEnv.mockResolvedValue("dev");
@@ -111,6 +119,51 @@ describe("withRequestScope", () => {
       tenantId: "tenant-1",
       source: "host",
     });
+  });
+
+  it("isolates concurrently bound tenants through the full request wrapper", async () => {
+    const releaseA = deferred();
+    const releaseB = deferred();
+    const observed: string[] = [];
+
+    mockResolveTenant.mockImplementation(async (input) => {
+      if (input.host === "a.example.com") {
+        return { id: "tenant-a", key: "a", source: "host" };
+      }
+      if (input.host === "b.example.com") {
+        return { id: "tenant-b", key: "b", source: "host" };
+      }
+      return null;
+    });
+
+    const requestA = withRequestScope(async () => {
+      observed.push(`a:start:${getRequestScope()?.tenantId}`);
+      await releaseA.promise;
+      observed.push(`a:end:${getRequestScope()?.tenantId}`);
+    })(
+      request({ host: "a.example.com", "x-request-id": "request-a" }),
+      response().res,
+    );
+
+    const requestB = withRequestScope(async () => {
+      observed.push(`b:start:${getRequestScope()?.tenantId}`);
+      releaseA.resolve();
+      await releaseB.promise;
+      observed.push(`b:end:${getRequestScope()?.tenantId}`);
+    })(
+      request({ host: "b.example.com", "x-request-id": "request-b" }),
+      response().res,
+    );
+
+    await Promise.resolve();
+    releaseB.resolve();
+    await Promise.all([requestA, requestB]);
+
+    expect(observed).toContain("a:start:tenant-a");
+    expect(observed).toContain("a:end:tenant-a");
+    expect(observed).toContain("b:start:tenant-b");
+    expect(observed).toContain("b:end:tenant-b");
+    expect(getRequestScope()).toBeNull();
   });
 
   it("does not trust a public tenant header", async () => {
