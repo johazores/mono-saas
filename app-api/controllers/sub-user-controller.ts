@@ -60,8 +60,8 @@ export async function subUserItemController(
   const id = String(req.query.id || "");
 
   if (req.method === "GET") {
-    const subUser = await userService.getById(id);
-    if (!subUser || subUser.parentId !== session.user.id) {
+    const subUser = await userService.getSubUser(session.user.id, id);
+    if (!subUser) {
       return sendError(res, "Sub-user not found.", 404);
     }
     return sendOk(res, subUser);
