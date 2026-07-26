@@ -1,15 +1,15 @@
 # Tenant Schema Migration
 
-- **Status:** Stage A/B implemented; Stage C read-only verification implemented; runtime cutover remains blocked
+- **Status:** Stage A/B/C implemented; authoritative request binding and create-time tenant staging implemented; Prisma authorization cutover remains blocked
 - **Last verified:** 2026-07-26
 - **Roadmap:** T-301, T-303, T-305, T-1301
 - **Decision:** ADR-001, ADR-002, ADR-003
 
 ## Why the migration is staged
 
-The current application stores deployment scope in `env` on 19 models. Existing rows have no authoritative tenant identity, so replacing `env` with a required `tenantId` in one schema change would make old data ambiguous and could create cross-tenant relationships during backfill.
+The current application stores deployment scope in `env` on 19 models. Existing rows originally had no authoritative tenant identity, so replacing `env` with a required `tenantId` in one schema change would make old data ambiguous and could create cross-tenant relationships during backfill.
 
-The safe migration is therefore additive first, verified backfill second, request/Prisma cutover third, and legacy-field removal last.
+The safe migration is therefore additive first, verified backfill second, authoritative request binding plus dual-write staging third, tenant-enforced Prisma cutover only after real isolation proof, and legacy-field removal last.
 
 ## Stage A — additive schema foundation
 
@@ -37,13 +37,13 @@ It adds nullable `tenantId` staging fields to all 19 legacy scoped models:
 - `Media`
 - `BlockTemplate`
 
-The current Prisma extension continues to scope on `env` during this stage. A nullable `tenantId` is migration metadata only and must not become an authorization source.
+The current Prisma extension continues to authorize/query those models on `env`. A staged `tenantId` may now be trusted request/migration metadata, but it is not yet the database authorization source.
 
 ### New isolation/workspace models
 
-`Tenant` is the eventual isolation and billing boundary. It owns a stable unique `key` that can be matched only after a tenant-resolution candidate has been verified.
+`Tenant` is the eventual isolation and billing boundary. It owns a stable unique `key` that is used only after a tenant-resolution candidate has been verified and mapped through the database.
 
-`TenantDomain` maps a normalized custom hostname to one tenant. T-301 will use this for authoritative custom-domain binding instead of trusting a hostname directly.
+`TenantDomain` maps a normalized custom hostname to one tenant. T-301 now uses it for authoritative custom-domain binding instead of trusting a hostname directly.
 
 `Organization` is the user-facing workspace. ADR-002 currently defines one organization per tenant, enforced by unique `tenantId`.
 
@@ -77,7 +77,7 @@ No `env` value is deleted or changed during backfill. See `docs/tenant-backfill-
 
 ## Stage C — read-only cutover verification
 
-Stage C adds `app-api/scripts/verify-tenant-cutover.mjs` as a separate read-only data-integrity gate.
+Stage C is merged as a separate read-only data-integrity gate.
 
 From `app-api`:
 
@@ -85,39 +85,61 @@ From `app-api`:
 pnpm run db:tenant:verify -- --tenant-key default
 ```
 
-The verifier checks all 19 staged collections for missing tenant IDs, tenant consistency across declared and known soft references, organization/membership hierarchy migration, provider-neutral external identities, feature/taxonomy soft keys, and collisions that would block final tenant-based unique indexes.
+The verifier checks all 19 staged collections for orphan/missing tenant IDs, canonical tenant-domain ownership, tenant consistency across declared and known soft references, organization/membership hierarchy migration, provider-neutral external identities, feature/taxonomy soft keys, and collisions that would block final tenant-based unique indexes.
 
-The command has no write mode and does not switch request or Prisma scoping. See `docs/tenant-cutover-verification.md` for the complete gate.
+The command has no write mode and does not switch request or Prisma authorization. See `docs/tenant-cutover-verification.md` for the complete gate.
 
-Before the runtime trusts `tenantId`:
+## Stage C.1 — authoritative request binding and live-write staging
 
-- every legacy scoped row must have a tenant ID;
+On routes already wrapped by `withRequestScope()`, request tenant selection now follows the full trust chain:
+
+1. T-306 produces an untrusted subdomain/custom-domain/path/signed-header candidate;
+2. `resolveAuthoritativeTenant()` maps that candidate through an active `Tenant` or owned `TenantDomain` using global `basePrisma`;
+3. only that verified database tenant ID enters `RequestScope.tenantId`;
+4. a syntactically valid candidate with no active database owner fails closed instead of silently selecting a tenant;
+5. public `x-tenant-id` remains unsupported.
+
+This verified request context is still not proof that an authenticated user is a member of the resolved organization. Membership enforcement remains a separate application authorization step.
+
+To keep live writes migration-ready after backfill, a staging helper now stamps the verified tenant ID onto newly created legacy scoped rows while `env` remains the actual Prisma guard:
+
+- top-level create/createMany and nested create branches are stamped;
+- caller-supplied tenant IDs on creates are overwritten by trusted context;
+- caller-supplied tenant IDs on update/upsert-update paths are removed;
+- existing records are never retagged by the staging helper.
+
+## What blocks the Prisma authorization cutover
+
+Before `tenantId` may replace `env` as the database authorization scope:
+
+- every legacy scoped row must have a valid tenant ID;
 - every organization membership must point to the same tenant as its organization and staged user;
 - no declared relation may cross tenant boundaries;
 - known soft references must resolve inside the owning tenant;
 - duplicate values that would violate final tenant-based unique indexes must be resolved;
+- authenticated workspace access must validate organization membership where required;
 - T-1301 must seed at least two real tenants and prove cross-tenant reads/writes fail.
 
-Only after those checks and T-1301 pass may the runtime cutover proceed:
+Only after those checks and T-1301 pass may the database cutover proceed:
 
-1. `RequestScope.tenantId` is populated only from an authoritative `Tenant` / `TenantDomain` / membership lookup;
-2. the Prisma scope extension switches from `env` to the accepted tenant boundary;
-3. repository queries stop treating deployment `env` as tenant data scope;
-4. compound uniques/indexes are recreated on `tenantId` where the model remains tenant-scoped;
-5. global identity models (`User`, `ExternalIdentity`, platform `Admin`, `SystemConfig`) are excluded from tenant data scoping as defined by ADR-002/ADR-003.
+1. the Prisma scope extension switches from `env` to the accepted tenant boundary;
+2. repository queries stop treating deployment `env` as tenant data scope;
+3. compound uniques/indexes are recreated on `tenantId` where the model remains tenant-scoped;
+4. global identity models (`User`, `ExternalIdentity`, platform `Admin`, `SystemConfig`) are handled according to ADR-002/ADR-003 rather than blindly tenant-scoped;
+5. the full post-cutover test suite verifies isolation and application behavior.
 
 ## Stage D — remove legacy scope fields
 
-Only after the runtime cutover and real two-tenant integration suite pass:
+Only after the database cutover and real two-tenant integration suite pass:
 
 - remove the 19 legacy `env` fields;
 - remove transitional `User.tenantId` once global-user membership migration is complete;
 - replace `User.clerkId` with `ExternalIdentity` reads/writes;
 - remove `User.parentId` and `User.ancestors` after all hierarchy-dependent features use organization membership;
 - remove `APP_ENV` from bootstrap configuration;
-- rebuild final tenant-aware unique indexes;
+- rebuild/finalize tenant-aware unique indexes;
 - update architecture, data-model, deployment, and security documentation in the same release.
 
 ## Release rule
 
-A populated staging `tenantId` and a clean Stage C verifier do **not** mean tenant isolation is complete. T-301, T-303, and T-305 remain in progress until authoritative runtime binding, the tenant-aware Prisma guard, and T-1301 real two-tenant database proof succeed.
+A verified request `tenantId`, populated staging rows, and a clean Stage C verifier do **not** mean tenant isolation is complete. T-301, T-303, and T-305 remain in progress until membership-sensitive routes are enforced, the tenant-aware Prisma guard is proven by T-1301, final indexes/identity migration are complete, and legacy scope can be removed safely.
