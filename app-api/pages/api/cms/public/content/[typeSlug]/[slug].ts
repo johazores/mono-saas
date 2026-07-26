@@ -1,2 +1,4 @@
 import { publicContentDetailController } from "@/controllers/public-content-controller";
-export default publicContentDetailController;
+import { withRequestScope } from "@/lib/api-request-scope";
+
+export default withRequestScope(publicContentDetailController);

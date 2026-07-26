@@ -1,2 +1,4 @@
 import { publicHomepageController } from "@/controllers/public-content-controller";
-export default publicHomepageController;
+import { withRequestScope } from "@/lib/api-request-scope";
+
+export default withRequestScope(publicHomepageController);
