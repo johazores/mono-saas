@@ -43,7 +43,7 @@ export const membershipRepository = {
 
   revokeBySourceId(sourceId: string) {
     return prisma.membership.updateMany({
-      where: { sourceId, status: "active" },
+      where: { ...tenantWhere(), sourceId, status: "active" },
       data: { status: "revoked" },
     });
   },
@@ -52,6 +52,12 @@ export const membershipRepository = {
     return prisma.membership.update({
       where: { id },
       data: { status: "revoked" },
+    });
+  },
+
+  deleteByUserId(userId: string) {
+    return prisma.membership.deleteMany({
+      where: { ...tenantWhere(), userId },
     });
   },
 };
