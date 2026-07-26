@@ -31,6 +31,18 @@ export const purchaseService = {
     if (!product.isActive)
       throw new Error("This product is no longer available.");
 
+    // Browser-return verification can be retried after a partial response or
+    // page refresh. Reuse the exact tenant/user/product/provider record before
+    // performing any subscription replacement or creating another purchase.
+    if (options?.externalId) {
+      const existing = await purchaseRepository.findByExternalIdForUserProduct(
+        userId,
+        productId,
+        options.externalId,
+      );
+      if (existing) return existing as PurchaseRecord;
+    }
+
     const isSubscription = product.paymentModel === "recurring";
 
     // For recurring products, cancel existing subscriptions first
