@@ -80,6 +80,20 @@ The local billing dependencies already use the same authoritative tenant context
 
 `User.stripeCustomerId` remains a transitional T-702 provider-specific field. This route hardening does not declare that field the final multi-workspace billing model; provider/customer references still need their planned provider-neutral migration before one global User can safely carry independent billing relationships across multiple tenants.
 
+### Member profile
+
+`GET|PUT /api/users/auth/profile`
+
+The profile route establishes request scope before `requireUser()`. On tenant-bound requests this proves active workspace membership before returning account data or accepting a profile update. The `activePlan` enrichment continues through tenant-qualified purchase/product reads, so the plan shown on the account page belongs to the current tenant.
+
+Profile ownership remains deliberately split at the accepted architecture boundary:
+
+- `User` identity fields such as name, email, password, phone, and address remain global account data;
+- tenant membership, role, workspace hierarchy, entitlements, purchases, and plan state remain tenant-owned data;
+- wrapping this route gates access to the member portal context but does not create a tenant-specific copy of the global User identity.
+
+This distinction must remain intact when legacy `User.tenantId` is removed during the final global-user cutover.
+
 ### Checkout
 
 `POST /api/checkout`
