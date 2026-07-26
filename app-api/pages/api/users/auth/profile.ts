@@ -1,3 +1,4 @@
 import { userProfileController } from "@/controllers/profile-controller";
+import { withRequestScope } from "@/lib/api-request-scope";
 
-export default userProfileController;
+export default withRequestScope(userProfileController);
