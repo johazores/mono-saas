@@ -22,13 +22,13 @@ The existing T-301 member-auth routes are already wrapped and enforce active org
 
 `GET /api/products/public`
 
-The route now establishes request scope. `productRepository.list()` adds `tenantId` only when a verified tenant exists, so a tenant storefront cannot list another tenant's staged products. Deployment-only requests preserve the legacy environment behavior.
+The route establishes request scope. `productRepository.list()` adds `tenantId` only when a verified tenant exists, so a tenant storefront cannot list another tenant's staged products. Deployment-only requests preserve the legacy environment behavior.
 
 ### Member purchases
 
 `/api/users/auth/purchases`
 
-The route now establishes request scope before `requireUser()`, so verified tenant requests enforce organization membership. Purchase history, ownership/subscription lookups, and relevant bulk operations add the staged tenant filter when context exists. Product lookup by ID also refuses another tenant's staged product before a purchase can be created.
+The route establishes request scope before `requireUser()`, so verified tenant requests enforce organization membership. Purchase history, ownership/subscription lookups, and relevant bulk operations add the staged tenant filter when context exists. Product lookup by ID also refuses another tenant's staged product before a purchase can be created.
 
 ### Member downloads
 
@@ -36,30 +36,39 @@ The route now establishes request scope before `requireUser()`, so verified tena
 
 `GET /api/users/auth/downloads/:fileId`
 
-Both routes now establish request scope before member authentication. Purchase and purchase-file repositories add the verified tenant filter, so knowing another tenant's file or purchase ID is insufficient on a tenant-bound request.
+Both routes establish request scope before member authentication. Purchase and purchase-file repositories add the verified tenant filter, so knowing another tenant's file or purchase ID is insufficient on a tenant-bound request.
 
-## Conditional repository behavior
-
-The current migration deliberately uses conditional filters rather than globally switching Prisma authorization:
-
-- verified tenant context: tenant-aware repository filters apply on the adopted route paths;
-- no tenant context: existing deployment `env` behavior remains unchanged;
-- create operations continue to receive the verified tenant ID from the staging helper;
-- the global Prisma extension still authorizes/scopes all legacy data by `env` until T-1301 passes.
-
-This is defense-in-depth for migrated routes, not the final data-isolation implementation.
-
-## Not adopted yet: checkout
+### Checkout
 
 `POST /api/checkout`
 
 `POST /api/checkout/verify`
 
-These routes are intentionally **not** wrapped yet.
+Both checkout routes now establish request scope.
 
-Checkout allows guest traffic and stores product/price references in JSON. Those soft references are still primarily protected by the legacy environment guard. Wrapping checkout before validating every product, price, checkout session, guest-created user, purchase, and verification relation against the verified tenant would create a false impression of tenant safety.
+The soft-reference chain is tenant-qualified before adoption:
 
-Checkout should be adopted only after its full soft-reference chain is tenant-qualified and regression-tested.
+- product lookup uses the verified tenant filter;
+- active product-price lookup uses the verified tenant filter;
+- checkout-session lookup and completion update use the verified tenant filter;
+- authenticated checkout requires active current-tenant organization membership;
+- a new guest user is staged to the verified tenant and receives membership before purchases are created;
+- a paid checkout matching an existing user can recover a missing membership only when that user's staged tenant matches the checkout tenant;
+- a cross-tenant existing user cannot be reassigned silently, and purchase creation/status completion stop on membership failure;
+- purchase creation re-validates product ownership through the tenant-aware product repository.
+
+Guest checkout therefore remains supported without allowing a checkout session, price, product, or user staged to another verified tenant to be reused silently.
+
+## Conditional repository behavior
+
+The current migration deliberately uses conditional filters rather than globally switching Prisma authorization:
+
+- verified tenant context: tenant-aware repository filters apply on adopted route paths;
+- no tenant context: existing deployment `env` behavior remains unchanged;
+- create operations continue to receive the verified tenant ID from the staging helper;
+- the global Prisma extension still authorizes/scopes all legacy data by `env` until T-1301 passes.
+
+This is defense-in-depth for migrated routes, not the final data-isolation implementation.
 
 ## Global routes
 
@@ -77,8 +86,8 @@ A future tenant-admin surface should use a distinct tenant-aware policy instead 
 T-301 remains in progress until:
 
 1. the complete API route surface is inventoried;
-2. every tenant-owned route is classified as member, public, tenant-admin, or system/internal;
-3. soft-reference-heavy routes such as checkout are made tenant-safe before wrapping;
+2. every remaining tenant-owned route is classified as member, public, tenant-admin, or system/internal;
+3. remaining soft-reference-heavy routes are tenant-qualified before wrapping;
 4. tenant membership/policy enforcement is applied where authentication alone is insufficient;
 5. T-1301 proves concurrent and relational isolation against a real two-tenant database;
 6. only then is the global Prisma guard switched from `env` to the accepted tenant boundary.
