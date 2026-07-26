@@ -38,6 +38,17 @@ async function resolveStripePriceId(
   );
 }
 
+async function rollbackGuestUser(userId: string, error: unknown): Promise<never> {
+  try {
+    await userRepository.delete(userId);
+  } catch {
+    throw new Error(
+      "Checkout user provisioning failed and cleanup could not complete.",
+    );
+  }
+  throw error;
+}
+
 export const checkoutService = {
   async createSession(
     input: CreateCheckoutInput,
@@ -204,7 +215,13 @@ export const checkoutService = {
           status: "active",
         });
         userId = newUser.id;
-        await provisionNewUserTenantMembership(newUser.id, workspace);
+
+        try {
+          await provisionNewUserTenantMembership(newUser.id, workspace);
+        } catch (error) {
+          return rollbackGuestUser(newUser.id, error);
+        }
+
         createdUser = {
           id: newUser.id,
           email: newUser.email,
