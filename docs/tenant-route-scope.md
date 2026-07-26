@@ -136,11 +136,13 @@ The soft-reference chain is tenant-qualified before adoption:
 - checkout-session lookup and completion update use the verified tenant filter;
 - authenticated checkout requires active current-tenant organization membership;
 - a new guest user is staged to the verified tenant and receives membership before purchases are created;
+- if that new guest cannot be provisioned into the workspace, the just-created User is removed before purchase creation and cleanup failure is surfaced explicitly;
 - a paid checkout matching an existing user can recover a missing membership only when that user's staged tenant matches the checkout tenant;
 - a cross-tenant existing user cannot be reassigned silently, and purchase creation/status completion stop on membership failure;
-- purchase creation re-validates product ownership through the tenant-aware product repository.
+- purchase creation re-validates product ownership through the tenant-aware product repository;
+- provider-backed purchase creation checks `(tenant, user, product, externalId)` before recurring replacement or insert, so a sequential browser-return retry reuses an already-created checkout line instead of duplicating it.
 
-Guest checkout therefore remains supported without allowing a checkout session, price, product, or user staged to another verified tenant to be reused silently.
+Guest checkout therefore remains supported without allowing a checkout session, price, product, or user staged to another verified tenant to be reused silently. The replay check protects ordinary retry/reload recovery after a partial verify response; it is not a substitute for T-705 provider event storage, database-backed idempotency keys, signature verification, or concurrent webhook/browser delivery control.
 
 ### Public CMS media delivery
 
