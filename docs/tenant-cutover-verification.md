@@ -6,7 +6,9 @@
 
 ## Purpose
 
-`app-api/scripts/verify-tenant-cutover.mjs` is the data-integrity gate after the staged tenant schema and explicit backfill have been applied.
+`pnpm run db:tenant:verify` is the read-only data-integrity gate after the staged tenant schema and explicit backfill have been applied.
+
+The package command runs `app-api/scripts/verify-tenant-cutover-entry.mjs` first to validate tenant ownership and canonical domain mappings, then runs the deeper `verify-tenant-cutover.mjs` relation/workspace/collision checks.
 
 It is deliberately read-only. A successful result means the staged data is internally consistent enough to continue toward a runtime cutover. It does **not** make `tenantId` an authorization boundary and does not complete tenant isolation.
 
@@ -27,9 +29,21 @@ From `app-api`:
 pnpm run db:tenant:verify -- --tenant-key default
 ```
 
-The tenant key must identify an existing `Tenant`. The verifier has no write or `--apply` mode.
+The tenant key must identify an existing `Tenant`. The verification command has no write or `--apply` mode.
 
 ## What it verifies
+
+### Tenant ownership and domain normalization
+
+Before deeper relation checks run, the entry gate verifies:
+
+- every non-null `tenantId` on all 19 staged collections resolves to a real `Tenant`;
+- every `TenantDomain.tenantId` resolves to a real tenant;
+- custom-domain hosts are valid canonical hostnames;
+- stored hosts match the same lowercase/trailing-dot/port normalization used by runtime tenant resolution;
+- no two stored domains normalize to the same hostname.
+
+This prevents a populated but orphaned tenant ID or an ambiguous custom-domain mapping from being mistaken for cutover readiness.
 
 ### Staged scope completeness
 
@@ -94,35 +108,24 @@ Before final tenant-based unique indexes can replace legacy `env` indexes, the v
 
 ## Output
 
-A failed verification exits non-zero and prints JSON similar to:
+A failed verification exits non-zero. Failures in the ownership/domain gate identify `stage: "tenant-ownership"`; deeper failures include the target tenant and verification summary.
 
-```json
-{
-  "ready": false,
-  "tenantKey": "default",
-  "failureCount": 3,
-  "failures": ["..."],
-  "failuresTruncated": false,
-  "summary": {}
-}
-```
-
-Failure messages are capped at 500 entries while `failureCount` retains the true total.
+Failure messages from the deeper verifier are capped at 500 entries while `failureCount` retains the true total.
 
 A clean result returns `ready: true`, but the success message still states that runtime scope must remain on `env`.
 
 ## Safety contract
 
-The verifier:
+Both verification stages:
 
-- has no `--apply` mode;
-- contains no Prisma create/update/upsert/delete operation;
-- does not execute raw database writes;
-- does not change `env`, `tenantId`, memberships, identities, indexes, or runtime configuration;
-- does not populate `RequestScope.tenantId`;
-- does not switch the Prisma guard.
+- have no write mode;
+- contain no Prisma create/update/upsert/delete operation;
+- do not execute raw database writes;
+- do not change `env`, `tenantId`, memberships, identities, indexes, or runtime configuration;
+- do not populate `RequestScope.tenantId`;
+- do not switch the Prisma guard.
 
-A regression test statically enforces the no-write contract.
+Regression tests statically enforce the no-write contract and assert that the package command routes through the ownership/domain gate.
 
 ## What still blocks runtime cutover
 
