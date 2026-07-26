@@ -1,6 +1,6 @@
 # Tenant Resolution
 
-- **Status:** Strategy and authoritative database binding implemented on request-scoped routes; database isolation cutover remains pending
+- **Status:** Strategy, authoritative database binding, and member-auth workspace enforcement implemented on request-scoped routes; database isolation cutover remains pending
 - **Last verified:** 2026-07-26
 - **Roadmap:** T-301, T-305, T-306, T-1301
 
@@ -162,11 +162,27 @@ Invalid, missing, malformed, stale, or mismatched signatures resolve to no candi
 
 The current wrapped surface includes the member authentication routes established by T-301. Route-wide adoption remains open.
 
+## Member authentication behavior
+
+A verified tenant does not automatically grant a user access to that workspace.
+
+For the current member-auth routes:
+
+- returning credentials sessions must have an active `OrganizationMembership` in the resolved tenant;
+- returning Clerk identities must already have the same active membership before they are accepted or linked;
+- user, membership, and organization tenant IDs must agree during this staged schema;
+- visiting another tenant hostname/path does not auto-create membership for an existing user;
+- a genuinely new credentials registration resolves the tenant organization before creating the account, then creates its membership before issuing the session;
+- a genuinely new Clerk identity that already passed open-signup/invitation rules receives membership only after the new staged user is created with the same tenant ID;
+- deployment-only requests with no resolved tenant preserve the existing membership-neutral behavior.
+
+This is current authentication/workspace enforcement only. It is not the future RBAC policy layer from T-501/T-502.
+
 ## Migration write behavior
 
 When a wrapped request has a verified tenant, the Prisma staging helper stamps that trusted tenant ID onto **new** legacy scoped rows while `env` remains the actual database guard.
 
-- `create` and `createMany` records receive the verified tenant ID.
+- `create` and `createMany` records receive the verified tenant ID;
 - nested create/createMany/connect-or-create/upsert-create records receive it too;
 - caller-supplied tenant IDs on create are overwritten;
 - caller-supplied tenant IDs on update paths are discarded;
@@ -179,7 +195,7 @@ This prevents live traffic from reintroducing `tenantId: null` after backfill wi
 Authoritative binding is only one part of T-301/T-305. The following remain open:
 
 - apply `withRequestScope()` consistently across tenant-aware API route groups;
-- verify authenticated users belong to the resolved organization/tenant where membership is required;
+- extend organization-membership/policy enforcement beyond the current member-auth surface;
 - run T-1301 against a real database with at least two tenants;
 - switch Prisma read/write authorization from deployment `env` to the accepted tenant boundary only after that proof;
 - create final tenant-aware unique indexes and complete the global-user/provider-neutral identity migration;
