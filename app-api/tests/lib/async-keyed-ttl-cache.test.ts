@@ -45,8 +45,11 @@ describe("createAsyncKeyedTtlCache", () => {
   });
 
   it("can invalidate one key without evicting other scopes", async () => {
-    const loader = vi
-      .fn(async (key: string) => `${key}-${loader.mock.calls.length}`);
+    let loadCount = 0;
+    const loader = vi.fn(async (key: string) => {
+      loadCount += 1;
+      return `${key}-${loadCount}`;
+    });
     const cache = createAsyncKeyedTtlCache(loader, 5_000);
 
     const firstA = await cache.get("tenant-a");
