@@ -1,2 +1,4 @@
 import { mediaFileController } from "@/controllers/media-controller";
-export default mediaFileController;
+import { withRequestScope } from "@/lib/api-request-scope";
+
+export default withRequestScope(mediaFileController);
