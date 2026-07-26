@@ -115,8 +115,8 @@ Tenant-bound auth, Clerk security, payment, checkout, and other runtime configur
 During the staged migration:
 
 - `getMany()` and `getAll()` include the verified `tenantId` when request scope has one;
-- legacy `get(key)` still uses the current `env+key` unique selector, then rejects the row unless its staged `tenantId` matches the verified tenant;
-- secret-class values are hydrated/decrypted only after the tenant ownership check passes;
+- `get(key)` queries `{tenantId,key}` directly when a tenant is verified and uses the legacy `env+key` unique selector only for deployment-only requests;
+- secret-class values are hydrated/decrypted only after a tenant-owned row has been selected;
 - requests without tenant context preserve the current deployment-level settings behavior used by platform administration;
 - tenant-bound `set()` is intentionally blocked until the final `SiteSetting(tenantId,key)` unique index replaces legacy `SiteSetting(env,key)`.
 
