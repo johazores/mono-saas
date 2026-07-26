@@ -1,2 +1,4 @@
 import { publicPageController } from "@/controllers/public-content-controller";
-export default publicPageController;
+import { withRequestScope } from "@/lib/api-request-scope";
+
+export default withRequestScope(publicPageController);
