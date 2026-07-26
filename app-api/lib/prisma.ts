@@ -1,6 +1,8 @@
 import { getAppEnv } from "./env";
 import { basePrisma } from "./base-prisma";
+import { getTenantId } from "./request-scope";
 import { applyEnvScope, isEnvScopedModel } from "./prisma-scope";
+import { applyTenantStagingCreates } from "./prisma-tenant-staging";
 
 export { basePrisma };
 
@@ -17,6 +19,10 @@ function createExtendedClient() {
           env,
           model,
         );
+        const tenantId = getTenantId();
+        if (tenantId && model) {
+          applyTenantStagingCreates(operation, scopedArgs, tenantId, model);
+        }
 
         return query(scopedArgs as typeof args);
       },
