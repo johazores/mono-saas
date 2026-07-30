@@ -2,8 +2,18 @@
 
 import { useState, useEffect, type FormEvent } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { adminSettingService, adminSystemConfigService } from "@/services/admin-setting-service";
-import { PageHeader, Notice, Button, Tabs, FormField, FormSelect } from "@/components/ui";
+import {
+  adminSettingService,
+  adminSystemConfigService,
+} from "@/services/admin-setting-service";
+import {
+  PageHeader,
+  Notice,
+  Button,
+  Tabs,
+  FormField,
+  FormSelect,
+} from "@/components/ui";
 import type {
   AuthProvider,
   PaymentMode,
@@ -61,6 +71,16 @@ const DEFAULT_THEME: ThemeTokens = {
   info: "#2563eb",
 };
 
+function formatAuthorizedParties(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .join(", ");
+  }
+
+  return typeof value === "string" ? value : "";
+}
+
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -72,6 +92,8 @@ export default function SettingsPage() {
     provider: "credentials",
     clerkPublishableKey: "",
     clerkSecretKey: "",
+    authorizedParties: "",
+    openSignup: false,
   });
   const [payment, setPayment] = useState<PaymentSettings>({
     provider: "stripe",
@@ -117,14 +139,19 @@ export default function SettingsPage() {
       .then((res) => {
         if (res.ok && res.data) {
           const map = new Map(
-            res.data.items.map((s) => [s.key, s.value as string]),
+            res.data.items.map((setting) => [setting.key, setting.value]),
           );
           setAuth({
             provider:
               (map.get("auth.provider") as AuthProvider) || "credentials",
             clerkPublishableKey:
               (map.get("auth.clerkPublishableKey") as string) || "",
-            clerkSecretKey: (map.get("auth.clerkSecretKey") as string) || "",
+            clerkSecretKey:
+              (map.get("auth.clerkSecretKey") as string) || "",
+            authorizedParties: formatAuthorizedParties(
+              map.get("auth.authorizedParties"),
+            ),
+            openSignup: map.get("auth.openSignup") === true,
           });
           setPayment({
             provider: (map.get("payment.provider") as string) || "stripe",
@@ -146,8 +173,8 @@ export default function SettingsPage() {
           setSiteLogoDark((map.get("site.logoDark") as string) || "");
           const loadedTheme: ThemeTokens = { ...DEFAULT_THEME };
           for (const { key } of THEME_FIELDS) {
-            const val = map.get(`theme.${key}`) as string;
-            if (val) loadedTheme[key] = val;
+            const value = map.get(`theme.${key}`) as string;
+            if (value) loadedTheme[key] = value;
           }
           setTheme(loadedTheme);
         }
@@ -157,9 +184,9 @@ export default function SettingsPage() {
     // Load system config (environment)
     adminSystemConfigService.get("APP_ENV").then((res) => {
       if (res.ok && res.data) {
-        const val = (res.data.value as "dev" | "production") || "dev";
-        setCurrentEnv(val);
-        setSelectedEnv(val);
+        const value = (res.data.value as "dev" | "production") || "dev";
+        setCurrentEnv(value);
+        setSelectedEnv(value);
       }
     });
   }, []);
@@ -198,15 +225,22 @@ export default function SettingsPage() {
     setAuthMessage("");
 
     try {
+      if (auth.provider === "clerk") {
+        await adminSettingService.update(
+          "auth.clerkPublishableKey",
+          auth.clerkPublishableKey,
+        );
+        await adminSettingService.update(
+          "auth.clerkSecretKey",
+          auth.clerkSecretKey,
+        );
+        await adminSettingService.update(
+          "auth.authorizedParties",
+          auth.authorizedParties,
+        );
+        await adminSettingService.update("auth.openSignup", auth.openSignup);
+      }
       await adminSettingService.update("auth.provider", auth.provider);
-      await adminSettingService.update(
-        "auth.clerkPublishableKey",
-        auth.clerkPublishableKey,
-      );
-      await adminSettingService.update(
-        "auth.clerkSecretKey",
-        auth.clerkSecretKey,
-      );
       setAuthMessage("Auth settings saved successfully.");
     } catch (err) {
       setAuthMessage(
@@ -307,16 +341,26 @@ export default function SettingsPage() {
             <div className="max-w-lg space-y-5">
               <div className="rounded-lg border border-warning/30 bg-warning/5 p-4">
                 <p className="text-sm font-medium text-warning">
-                  Warning: Switching the environment changes the data partition for ALL API traffic.
+                  Warning: Switching the environment changes the data partition
+                  for ALL API traffic.
                 </p>
                 <p className="mt-1 text-xs text-muted">
-                  Dev and production data are independent. Switching does not delete data — it changes which dataset is active.
+                  Dev and production data are independent. Switching does not
+                  delete data — it changes which dataset is active.
                 </p>
               </div>
 
               <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-foreground">Current environment:</span>
-                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${currentEnv === "production" ? "bg-error/10 text-error" : "bg-success/10 text-success"}`}>
+                <span className="text-sm font-medium text-foreground">
+                  Current environment:
+                </span>
+                <span
+                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    currentEnv === "production"
+                      ? "bg-error/10 text-error"
+                      : "bg-success/10 text-success"
+                  }`}
+                >
                   {currentEnv}
                 </span>
               </div>
@@ -404,13 +448,16 @@ export default function SettingsPage() {
                 label="Authentication Provider"
                 value={auth.provider}
                 onChange={(e) =>
-                  setAuth((s) => ({
-                    ...s,
+                  setAuth((state) => ({
+                    ...state,
                     provider: e.target.value as AuthProvider,
                   }))
                 }
                 options={[
-                  { value: "credentials", label: "Credentials (email & password)" },
+                  {
+                    value: "credentials",
+                    label: "Credentials (email & password)",
+                  },
                   { value: "clerk", label: "Clerk" },
                 ]}
                 hint="Switching to Clerk will disable email/password login for users. Admin authentication is always password-based."
@@ -424,8 +471,8 @@ export default function SettingsPage() {
                     type="text"
                     value={auth.clerkPublishableKey}
                     onChange={(e) =>
-                      setAuth((s) => ({
-                        ...s,
+                      setAuth((state) => ({
+                        ...state,
                         clerkPublishableKey: e.target.value,
                       }))
                     }
@@ -437,14 +484,49 @@ export default function SettingsPage() {
                     type="password"
                     value={auth.clerkSecretKey}
                     onChange={(e) =>
-                      setAuth((s) => ({
-                        ...s,
+                      setAuth((state) => ({
+                        ...state,
                         clerkSecretKey: e.target.value,
                       }))
                     }
                     placeholder="sk_test_..."
                     hint="Stored securely. Required for backend token verification."
                   />
+                  <FormField
+                    id="clerk-authorized-parties"
+                    label="Authorized Origins"
+                    type="text"
+                    value={auth.authorizedParties}
+                    onChange={(e) =>
+                      setAuth((state) => ({
+                        ...state,
+                        authorizedParties: e.target.value,
+                      }))
+                    }
+                    placeholder="https://app.example.com, https://admin.example.com"
+                    hint="Comma-separated URL origins. Paths are not allowed. These values are loaded from the database at runtime."
+                  />
+                  <label className="flex items-start gap-3 rounded-lg border border-border bg-surface p-4">
+                    <input
+                      type="checkbox"
+                      checked={auth.openSignup}
+                      onChange={(e) =>
+                        setAuth((state) => ({
+                          ...state,
+                          openSignup: e.target.checked,
+                        }))
+                      }
+                      className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-foreground">
+                        Allow open signup
+                      </span>
+                      <span className="mt-1 block text-xs text-muted">
+                        When disabled, new Clerk users require a valid invitation.
+                      </span>
+                    </span>
+                  </label>
                 </>
               )}
 
@@ -461,7 +543,9 @@ export default function SettingsPage() {
               {paymentMessage && (
                 <Notice
                   message={paymentMessage}
-                  variant={paymentMessage.includes("success") ? "success" : "error"}
+                  variant={
+                    paymentMessage.includes("success") ? "success" : "error"
+                  }
                 />
               )}
 
@@ -470,7 +554,10 @@ export default function SettingsPage() {
                 label="Payment Provider"
                 value={payment.provider}
                 onChange={(e) =>
-                  setPayment((s) => ({ ...s, provider: e.target.value }))
+                  setPayment((state) => ({
+                    ...state,
+                    provider: e.target.value,
+                  }))
                 }
                 options={[{ value: "stripe", label: "Stripe" }]}
               />
@@ -480,8 +567,8 @@ export default function SettingsPage() {
                 label="Mode"
                 value={payment.mode}
                 onChange={(e) =>
-                  setPayment((s) => ({
-                    ...s,
+                  setPayment((state) => ({
+                    ...state,
                     mode: e.target.value as PaymentMode,
                   }))
                 }
@@ -492,7 +579,7 @@ export default function SettingsPage() {
                 hint="Test mode uses Stripe test keys. Switch to Live for real payments."
               />
 
-              <div className="rounded-lg border border-border bg-surface p-4 space-y-4">
+              <div className="space-y-4 rounded-lg border border-border bg-surface p-4">
                 <h3 className="text-sm font-medium text-foreground">
                   Test Mode Keys
                 </h3>
@@ -502,8 +589,8 @@ export default function SettingsPage() {
                   type="text"
                   value={payment.stripeTestPublicKey}
                   onChange={(e) =>
-                    setPayment((s) => ({
-                      ...s,
+                    setPayment((state) => ({
+                      ...state,
                       stripeTestPublicKey: e.target.value,
                     }))
                   }
@@ -515,8 +602,8 @@ export default function SettingsPage() {
                   type="password"
                   value={payment.stripeTestSecretKey}
                   onChange={(e) =>
-                    setPayment((s) => ({
-                      ...s,
+                    setPayment((state) => ({
+                      ...state,
                       stripeTestSecretKey: e.target.value,
                     }))
                   }
@@ -524,7 +611,7 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <div className="rounded-lg border border-border bg-surface p-4 space-y-4">
+              <div className="space-y-4 rounded-lg border border-border bg-surface p-4">
                 <h3 className="text-sm font-medium text-foreground">
                   Live Mode Keys
                 </h3>
@@ -534,8 +621,8 @@ export default function SettingsPage() {
                   type="text"
                   value={payment.stripeLivePublicKey}
                   onChange={(e) =>
-                    setPayment((s) => ({
-                      ...s,
+                    setPayment((state) => ({
+                      ...state,
                       stripeLivePublicKey: e.target.value,
                     }))
                   }
@@ -547,8 +634,8 @@ export default function SettingsPage() {
                   type="password"
                   value={payment.stripeLiveSecretKey}
                   onChange={(e) =>
-                    setPayment((s) => ({
-                      ...s,
+                    setPayment((state) => ({
+                      ...state,
                       stripeLiveSecretKey: e.target.value,
                     }))
                   }
@@ -592,7 +679,10 @@ export default function SettingsPage() {
               />
 
               <div>
-                <label htmlFor="site-auth-quote" className="block text-sm font-medium text-foreground">
+                <label
+                  htmlFor="site-auth-quote"
+                  className="block text-sm font-medium text-foreground"
+                >
                   Auth Page Quote
                 </label>
                 <textarea
@@ -726,8 +816,8 @@ export default function SettingsPage() {
           <section className="rounded-xl border border-border bg-background p-6">
             <form onSubmit={handleThemeSubmit} className="max-w-lg space-y-5">
               <p className="text-xs text-muted">
-                Customize the application color palette. Changes apply after page
-                reload.
+                Customize the application color palette. Changes apply after
+                page reload.
               </p>
 
               {themeMessage && (
@@ -744,7 +834,10 @@ export default function SettingsPage() {
                       type="color"
                       value={theme[key] || "#000000"}
                       onChange={(e) =>
-                        setTheme((t) => ({ ...t, [key]: e.target.value }))
+                        setTheme((current) => ({
+                          ...current,
+                          [key]: e.target.value,
+                        }))
                       }
                       className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-0.5"
                     />
@@ -762,7 +855,8 @@ export default function SettingsPage() {
                 <p className="text-sm font-medium text-foreground">
                   Gradients{" "}
                   <span className="font-normal text-muted">
-                    (optional — use CSS gradient syntax, e.g. linear-gradient(135deg, #667eea, #764ba2))
+                    (optional — use CSS gradient syntax, e.g.
+                    linear-gradient(135deg, #667eea, #764ba2))
                   </span>
                 </p>
                 {GRADIENT_FIELDS.map(({ key, label }) => (
@@ -779,7 +873,10 @@ export default function SettingsPage() {
                         type="text"
                         value={theme[key] || ""}
                         onChange={(e) =>
-                          setTheme((t) => ({ ...t, [key]: e.target.value || undefined }))
+                          setTheme((current) => ({
+                            ...current,
+                            [key]: e.target.value || undefined,
+                          }))
                         }
                         placeholder="none"
                         className="w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground placeholder:text-muted"
