@@ -8,7 +8,6 @@ const ENV_KEYS = [
   "ENCRYPTION_KEY",
   "ENCRYPTION_KEY_VERSION",
   "APP_ENV",
-  "CLIENT_ORIGIN",
   "TENANT_RESOLUTION_SHARED_SECRET",
   "NODE_ENV",
 ] as const;
@@ -26,7 +25,6 @@ function setValidEnv(): void {
   process.env.ENCRYPTION_KEY = "a".repeat(64);
   process.env.ENCRYPTION_KEY_VERSION = "1";
   process.env.APP_ENV = "dev";
-  process.env.CLIENT_ORIGIN = "http://localhost:7000";
   process.env.TENANT_RESOLUTION_SHARED_SECRET =
     "tenant-resolution-secret-at-least-32-characters";
   process.env.NODE_ENV = "test";
@@ -97,14 +95,6 @@ describe("validateBootstrapEnv", () => {
     process.env.APP_ENV = "staging";
 
     expect(() => validateBootstrapEnv()).toThrow("Invalid APP_ENV");
-  });
-
-  it("requires CLIENT_ORIGIN to be an exact origin", () => {
-    process.env.CLIENT_ORIGIN = "https://example.com/app";
-
-    expect(() => validateBootstrapEnv()).toThrow(
-      "CLIENT_ORIGIN must be an origin without a path",
-    );
   });
 
   it("rejects a short tenant-resolution shared secret", () => {
