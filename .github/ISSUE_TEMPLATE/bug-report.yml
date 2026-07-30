@@ -1,0 +1,30 @@
+name: Bug report
+description: Report a reproducible platform problem
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: input
+    id: area
+    attributes:
+      label: Application and feature area
+      placeholder: app-api authentication
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Safe reproduction
+      description: Remove credentials, tenant data, and private deployment details.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Tenant, authorization, billing, or security impact

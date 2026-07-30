@@ -2,11 +2,12 @@
   "name": "mono-saas",
   "version": "1.0.0",
   "private": true,
-  "description": "Reusable SaaS boilerplate with separate API and client applications",
+  "description": "Modular Next.js SaaS foundation with separate API and client applications in active development",
   "author": {
     "name": "Johanssen Azores",
-    "email": "johanss.zip@gmail.com"
+    "url": "https://github.com/johazores"
   },
+  "license": "MIT",
   "scripts": {
     "prepare": "npx pnpm exec husky install",
     "format": "npx prettier --write --ignore-unknown \"app-client/**/*.{js,jsx,ts,tsx,css,md,mdx,yml,yaml}\" \"app-api/**/*.{js,jsx,ts,tsx,css,md,mdx,yml,yaml}\"",
