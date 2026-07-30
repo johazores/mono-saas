@@ -15,6 +15,8 @@ export type AuthSettings = {
   provider: AuthProvider;
   clerkPublishableKey: string;
   clerkSecretKey: string;
+  authorizedParties: string;
+  openSignup: boolean;
 };
 
 export type PaymentSettings = {
