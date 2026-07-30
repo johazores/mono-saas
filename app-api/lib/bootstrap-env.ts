@@ -15,22 +15,6 @@ function requireNonEmpty(name: string): string {
   return value;
 }
 
-function validateClientOrigin(): void {
-  const raw = process.env.CLIENT_ORIGIN?.trim();
-  if (!raw) return;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    throw new Error("CLIENT_ORIGIN must be a valid URL origin.");
-  }
-
-  if (parsed.origin !== raw.replace(/\/$/, "")) {
-    throw new Error("CLIENT_ORIGIN must be an origin without a path.");
-  }
-}
-
 function validateTenantResolutionSecret(): void {
   const secret = process.env.TENANT_RESOLUTION_SHARED_SECRET?.trim();
   if (!secret) return;
@@ -43,7 +27,8 @@ function validateTenantResolutionSecret(): void {
 
 /**
  * Validate only configuration required before encrypted/database-backed runtime
- * settings can be used safely. Provider credentials remain SiteSetting values.
+ * settings can be used safely. Provider credentials and administrator-managed
+ * runtime configuration remain SiteSetting values.
  *
  * APP_ENV remains transitional until T-305 replaces environment partitioning
  * with tenantId and separate deployment databases.
@@ -53,7 +38,6 @@ export function validateBootstrapEnv(): void {
   getSessionSecret();
   getUserSessionSecret();
   getAppEnvSync();
-  validateClientOrigin();
   validateTenantResolutionSecret();
 
   const hasEncryptionKey = Boolean(process.env.ENCRYPTION_KEY?.trim());

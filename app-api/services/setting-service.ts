@@ -147,16 +147,11 @@ async function loadClerkSecurityConfig(): Promise<ClerkSecurityConfig> {
     "auth.openSignup",
   ]);
   const map = new Map(records.map((record) => [record.key, record.value]));
-  const configuredParties = normalizeAuthorizedParties(
-    map.get("auth.authorizedParties"),
-  );
-  const fallbackParties = normalizeAuthorizedParties(
-    process.env.CLIENT_ORIGIN ?? "",
-  );
 
   return {
-    authorizedParties:
-      configuredParties.length > 0 ? configuredParties : fallbackParties,
+    authorizedParties: normalizeAuthorizedParties(
+      map.get("auth.authorizedParties"),
+    ),
     openSignup: map.get("auth.openSignup") === true,
   };
 }

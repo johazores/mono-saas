@@ -9,7 +9,7 @@
 
 **T-902 · Define the bootstrap env surface**
 - **Priority** P1 · **Status** In progress · **Complexity** S · **Depends on** T-101
-- **Notes:** `.env.example` and `docs/bootstrap-configuration.md` now define the bootstrap-only surface. Next.js `instrumentation.register()` validates the database URL, administrator/member session secrets, transitional `APP_ENV`, optional Clerk origin fallback, optional trusted tenant-header secret, and current encryption key/version rules. `ENCRYPTION_KEY` is required in production. Provider/integration credentials remain database-backed settings. The remaining blocker is T-305 removing `APP_ENV` and finalizing the post-migration surface.
+- **Notes:** `.env.example` and `docs/bootstrap-configuration.md` define the bootstrap-only surface. Next.js `instrumentation.register()` validates the database URL, administrator/member session secrets, transitional `APP_ENV`, optional trusted tenant-header secret, and current encryption key/version rules. `ENCRYPTION_KEY` is required in production. Administrator-managed runtime configuration and provider/integration credentials remain database-backed settings without environment fallbacks. The remaining blocker is T-305 removing `APP_ENV` and finalizing the post-migration surface.
 - **Acceptance:** Documented list; startup validation; `.env.example` matches exactly.
 
 **T-903 · Settings change audit**

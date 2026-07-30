@@ -1,14 +1,16 @@
 # Bootstrap Configuration
 
 - **Status:** Current bootstrap validation; `APP_ENV` removal remains T-305
-- **Last verified:** 2026-07-25
+- **Last verified:** 2026-07-30
 - **Roadmap:** T-902
 
 ## Principle
 
 Environment variables are limited to values required before encrypted/database-backed runtime configuration can be loaded safely.
 
-Authentication-provider, payment-provider, email, storage-provider, and other integration credentials belong in encrypted `SiteSetting` records rather than the bootstrap environment.
+The Admin CMS and database-backed settings are the single source of truth for administrator-managed runtime configuration. Authentication-provider, payment-provider, email, storage-provider, site, theme, and other integration settings must not fall back to environment variables.
+
+Environment variables remain appropriate only for bootstrap values and secrets that cannot reasonably be loaded from the database before the application starts.
 
 ## Current surface
 
@@ -23,7 +25,6 @@ Authentication-provider, payment-provider, email, storage-provider, and other in
 | `NODE_ENV` | Runtime | Node/Next runtime mode |
 | `APP_ENV` | Transitional | Current `dev`/`production` persistence partition; removed by T-305 |
 | `TENANT_RESOLUTION_SHARED_SECRET` | Trusted-header mode only | HMAC secret for the internal tenant-resolution gateway header |
-| `CLIENT_ORIGIN` | Optional | Exact Clerk authorized-party fallback when no database allowlist exists |
 
 ## Startup validation
 
@@ -34,13 +35,26 @@ Startup fails when:
 - `DATABASE_URL` is missing;
 - either session secret is missing or shorter than 32 characters;
 - `APP_ENV` is not `dev` or `production`;
-- `CLIENT_ORIGIN` is present but is not an exact URL origin;
 - `TENANT_RESOLUTION_SHARED_SECRET` is present but shorter than 32 characters;
 - `ENCRYPTION_KEY` is missing in production;
 - a configured current encryption key does not decode to exactly 32 bytes;
 - `ENCRYPTION_KEY_VERSION` is not a positive integer.
 
 Development/test processes may start without `ENCRYPTION_KEY`. Secret-class setting reads/writes still require a valid key when they are actually used.
+
+## Runtime configuration ownership
+
+Runtime configuration that administrators may change belongs in registered database-backed settings and should be managed through the Admin CMS.
+
+Examples include:
+
+- authentication provider, Clerk keys, authorized origins, and signup policy;
+- payment provider, mode, and provider credentials;
+- storage provider and object-storage credentials;
+- site identity, branding, and theme values;
+- future email, notification, webhook, and integration settings.
+
+Runtime loaders must read these values through the existing settings service and cache layer. Missing database configuration should fail closed or use a safe application default; it must not silently read an environment-variable fallback.
 
 ## Encryption key formats
 
